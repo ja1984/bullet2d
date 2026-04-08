@@ -18,9 +18,34 @@ export function drawEnemies() {
     const alpha = e.state === 'dead' ? Math.max(0, Math.min(1, e.deathTimer / 2)) : 1
     ctx.globalAlpha = alpha
 
-    // Try sprite rendering
-    if (!drawEnemySprite(e)) {
-      // Fallback to rectangles
+    if (e.behavior === 'drone') {
+      // Draw drone — small mechanical box with propellers
+      const dx = e.x, dy = e.y
+      const cx = dx + e.w / 2, cy = dy + e.h / 2
+      const bob = Math.sin(state.gameTime * 8 + e.x) * 1.5
+
+      // Body
+      ctx.fillStyle = e.state === 'dead' ? '#333' : '#556677'
+      ctx.fillRect(cx - 7, cy - 4 + bob, 14, 8)
+      // Camera eye
+      ctx.fillStyle = e.state === 'dead' ? '#444' : (e.state === 'alert' ? '#ff4444' : '#44ffaa')
+      ctx.fillRect(cx - 2, cy - 2 + bob, 4, 3)
+      // Propeller arms
+      ctx.fillStyle = '#445566'
+      ctx.fillRect(cx - 10, cy - 6 + bob, 20, 2)
+      // Spinning propellers
+      if (e.state !== 'dead') {
+        const spin = Math.sin(state.gameTime * 30 + e.x) * 4
+        ctx.fillStyle = '#88aabb'
+        ctx.fillRect(cx - 10 + spin, cy - 8 + bob, 3, 2)
+        ctx.fillRect(cx + 7 - spin, cy - 8 + bob, 3, 2)
+      }
+      // Landing skids
+      ctx.fillStyle = '#445566'
+      ctx.fillRect(cx - 6, cy + 4 + bob, 2, 3)
+      ctx.fillRect(cx + 4, cy + 4 + bob, 2, 3)
+    } else if (!drawEnemySprite(e)) {
+      // Fallback to rectangles for non-drone enemies
       const ex = e.x, ey = e.y
 
       ctx.fillStyle = e.state === 'dead' ? '#553333' : e.state === 'alert' ? '#884444' : '#666677'
@@ -40,10 +65,10 @@ export function drawEnemies() {
       ctx.fillRect(ex + 14, ey + 34, 5, 10)
     }
 
-    // Enemy weapon sprite
-    if (e.state !== 'dead') {
+    // Enemy weapon sprite (skip for drones — weapon is built into the body)
+    if (e.state !== 'dead' && e.behavior !== 'drone') {
       const behaviorWeapon: Record<EnemyBehavior, WeaponType> = {
-        grunt: 'pistol', shotgunner: 'shotgun', sniper: 'sniper', rusher: 'm16', boss: 'shotgun',
+        grunt: 'pistol', shotgunner: 'shotgun', sniper: 'sniper', rusher: 'm16', boss: 'shotgun', drone: 'pistol',
       }
       const ew = weaponSprites[behaviorWeapon[e.behavior]]
       const eArmX = e.x + e.w / 2
@@ -86,7 +111,7 @@ export function drawEnemies() {
 
       // Behavior indicator color
       const behaviorColors: Record<EnemyBehavior, string> = {
-        grunt: '#888', shotgunner: '#ff8844', sniper: '#44aaff', rusher: '#ff4466', boss: '#ff22ff',
+        grunt: '#888', shotgunner: '#ff8844', sniper: '#44aaff', rusher: '#ff4466', boss: '#ff22ff', drone: '#44ffaa',
       }
       ctx.fillStyle = behaviorColors[e.behavior]
       ctx.fillRect(barX, barY - 2, barW, 1)
@@ -222,9 +247,10 @@ export function drawPlayer() {
   }
   ctx.restore()
 
-  // M16 laser pointer — raycast against platforms and cover
-  if (state.currentWeapon === 'm16') {
-    const ws2 = weaponSprites['m16']
+  // Laser pointer for M16 and Sniper
+  const hasLaser = state.currentWeapon === 'm16' || state.currentWeapon === 'sniper'
+  if (hasLaser) {
+    const ws2 = weaponSprites[state.currentWeapon]
     const targetH = 12
     const gunLen = ws2?.loaded ? ws2.w * (targetH / ws2.h) : 14
     const handDist = Math.sqrt((ARM_HAND_X - ARM_PIVOT_X) ** 2 + (ARM_HAND_Y - ARM_PIVOT_Y) ** 2)
@@ -234,14 +260,11 @@ export function drawPlayer() {
     const laserStartX = shoulderX + dirX * barrelDist
     const laserStartY = shoulderY + dirY * barrelDist
 
-    // Raycast — step along the laser and check for collisions
-    let laserEndX = shoulderX + dirX * 2000
-    let laserEndY = shoulderY + dirY * 2000
+    const maxRange = state.currentWeapon === 'sniper' ? 3000 : 2000
     const aliveEnemies = state.enemies.filter(e => e.state !== 'dead')
     const allRects = [...platforms, ...state.coverBoxes, ...aliveEnemies]
 
-    // Ray-AABB intersection for each rect
-    let closestT = 2000
+    let closestT = maxRange
     for (const r of allRects) {
       const tMinX = (r.x - laserStartX) / dirX
       const tMaxX = (r.x + r.w - laserStartX) / dirX
@@ -261,22 +284,23 @@ export function drawPlayer() {
       }
     }
 
-    laserEndX = laserStartX + dirX * closestT
-    laserEndY = laserStartY + dirY * closestT
+    const laserEndX = laserStartX + dirX * closestT
+    const laserEndY = laserStartY + dirY * closestT
 
+    const isSniper = state.currentWeapon === 'sniper'
     ctx.save()
-    ctx.globalAlpha = 0.4
-    ctx.strokeStyle = '#ff0000'
-    ctx.lineWidth = 1
+    ctx.globalAlpha = isSniper ? 0.4 : 0.4
+    ctx.strokeStyle = isSniper ? '#ff0000' : '#00ff00'
+    ctx.lineWidth = isSniper ? 0.5 : 1
     ctx.beginPath()
     ctx.moveTo(laserStartX, laserStartY)
     ctx.lineTo(laserEndX, laserEndY)
     ctx.stroke()
     // Dot at hit point
-    ctx.globalAlpha = 0.6
-    ctx.fillStyle = '#ff0000'
+    ctx.globalAlpha = isSniper ? 0.6 : 0.6
+    ctx.fillStyle = isSniper ? '#ff0000' : '#00ff00'
     ctx.beginPath()
-    ctx.arc(laserEndX, laserEndY, 2, 0, Math.PI * 2)
+    ctx.arc(laserEndX, laserEndY, isSniper ? 1.5 : 2, 0, Math.PI * 2)
     ctx.fill()
     ctx.restore()
   }

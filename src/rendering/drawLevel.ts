@@ -7,13 +7,28 @@ export function drawPlatforms() {
   const ctx = state.ctx!
 
   for (const p of platforms) {
-    ctx.fillStyle = '#2a2a3e'
-    ctx.fillRect(p.x, p.y, p.w, p.h)
-    ctx.fillStyle = '#4a4a6e'
-    ctx.fillRect(p.x, p.y, p.w, 2)
-    ctx.fillStyle = '#1a1a2e'
-    ctx.fillRect(p.x, p.y, 2, p.h)
-    ctx.fillRect(p.x + p.w - 2, p.y, 2, p.h)
+    if (p.destructible) {
+      // Destructible platform — wood/cracked look
+      const dmg = (p.hp ?? 0) / (p.maxHp ?? 1)
+      ctx.fillStyle = dmg > 0.5 ? '#5a4a2e' : '#4a3a1e'
+      ctx.fillRect(p.x, p.y, p.w, p.h)
+      ctx.fillStyle = '#6a5a3e'
+      ctx.fillRect(p.x, p.y, p.w, 2)
+      // Cracks when damaged
+      if (dmg < 0.6) {
+        ctx.fillStyle = 'rgba(0,0,0,0.3)'
+        ctx.fillRect(p.x + p.w * 0.3, p.y + 2, 2, p.h - 2)
+        ctx.fillRect(p.x + p.w * 0.7, p.y + 2, 2, p.h - 2)
+      }
+    } else {
+      ctx.fillStyle = '#2a2a3e'
+      ctx.fillRect(p.x, p.y, p.w, p.h)
+      ctx.fillStyle = '#4a4a6e'
+      ctx.fillRect(p.x, p.y, p.w, 2)
+      ctx.fillStyle = '#1a1a2e'
+      ctx.fillRect(p.x, p.y, 2, p.h)
+      ctx.fillRect(p.x + p.w - 2, p.y, 2, p.h)
+    }
   }
 }
 

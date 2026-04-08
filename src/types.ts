@@ -10,6 +10,9 @@ export interface Rect {
   y: number
   w: number
   h: number
+  destructible?: boolean
+  hp?: number
+  maxHp?: number
 }
 
 export interface Bullet {
@@ -34,7 +37,7 @@ export interface Particle {
   size: number
 }
 
-export type EnemyBehavior = 'grunt' | 'shotgunner' | 'sniper' | 'rusher' | 'boss'
+export type EnemyBehavior = 'grunt' | 'shotgunner' | 'sniper' | 'rusher' | 'boss' | 'drone'
 
 export type EnemyAnim = 'idle' | 'walk' | 'hit' | 'death'
 
@@ -117,6 +120,13 @@ export interface AmmoPickup {
   bobTimer: number
   weaponType: WeaponType
   amount: number
+}
+
+export interface KillFeedEntry {
+  text: string
+  color: string
+  life: number
+  maxLife: number
 }
 
 export type WeaponType = 'pistol' | 'shotgun' | 'm16' | 'sniper'

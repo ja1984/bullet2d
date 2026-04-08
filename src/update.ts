@@ -227,6 +227,22 @@ export function update(dt: number) {
     }
   }
 
+  // Speed trail particles during dive/roll
+  if (player.diving || player.rolling) {
+    const trailX = player.x + player.w / 2 - player.vx * 0.02
+    const trailY = player.y + player.h / 2
+    state.particles.push({
+      x: trailX + (Math.random() - 0.5) * 8,
+      y: trailY + (Math.random() - 0.5) * 8,
+      vx: -player.vx * 0.3 + (Math.random() - 0.5) * 30,
+      vy: (Math.random() - 0.5) * 20,
+      life: 0.15 + Math.random() * 0.1,
+      maxLife: 0.2,
+      color: '#4466aa',
+      size: 2 + Math.random() * 2,
+    })
+  }
+
   resolvePhysics(player, gameDt)
 
   // ── Weapon Pickups ──
@@ -265,9 +281,13 @@ export function update(dt: number) {
     }
     state.magRounds[state.currentWeapon]--
 
-    player.shootCooldown = weapon.fireRate
+    // Dual pistols — alternate hands, faster fire rate
+    const isDualPistol = state.currentWeapon === 'pistol'
+    player.shootCooldown = isDualPistol ? weapon.fireRate * 0.6 : weapon.fireRate
+    const handOffset = isDualPistol ? (state.pistolHand === 0 ? -4 : 4) : 0
+    if (isDualPistol) state.pistolHand = state.pistolHand === 0 ? 1 : 0
     const cx = player.x + player.w / 2 + (player.facing > 0 ? ARM_ANCHOR_X : -ARM_ANCHOR_X)
-    const cy = player.y + player.h / 2 + ARM_ANCHOR_Y
+    const cy = player.y + player.h / 2 + ARM_ANCHOR_Y + handOffset
     const baseAngle = Math.atan2(aimWorldY - cy, aimWorldX - cx)
     const armLength = 68 - ARM_PIVOT_X
     const ws = weaponSprites[state.currentWeapon]
@@ -346,22 +366,37 @@ export function update(dt: number) {
         e.patrolDir *= -1
         e.patrolTimer = 2 + Math.random() * 3
       }
-      e.vx = e.patrolDir * cfg.speed
-      e.facing = e.patrolDir
+      if (e.behavior === 'drone') {
+        // Drone hovers with sine wave
+        e.vx = e.patrolDir * cfg.speed
+        e.vy = Math.sin(state.gameTime * 3 + e.x) * 30
+      } else {
+        e.vx = e.patrolDir * cfg.speed
+        e.facing = e.patrolDir
+      }
     } else if (e.state === 'alert') {
       // Behavior-specific alert logic
-      if (e.behavior === 'rusher') {
-        // Rush toward player
+      if (e.behavior === 'drone') {
+        // Fly toward player but stay above
+        e.vx = (dx > 0 ? 1 : -1) * cfg.speed
+        const targetY = player.y - 80
+        e.vy = (targetY - e.y) * 2
+      } else if (e.behavior === 'rusher') {
         e.vx = (dx > 0 ? 1 : -1) * cfg.speed
       } else if (e.behavior === 'sniper') {
-        // Keep distance — back away if too close
         if (dist < 300) {
           e.vx = (dx > 0 ? -1 : 1) * cfg.speed
         } else {
           e.vx = 0
         }
       } else {
-        e.vx = 0
+        // Grunt/shotgunner — take cover when hurt
+        if (e.hitTimer > 0 && e.hp < e.maxHp * 0.5) {
+          // Move away from player to find cover
+          e.vx = (dx > 0 ? -1 : 1) * cfg.speed * 1.5
+        } else {
+          e.vx = 0
+        }
       }
 
       e.shootTimer -= gameDt
@@ -392,7 +427,16 @@ export function update(dt: number) {
       }
     }
 
-    resolvePhysics(e, gameDt)
+    if (e.behavior === 'drone') {
+      // Drones fly — manual position update, no gravity
+      e.x += e.vx * gameDt
+      e.y += e.vy * gameDt
+      // Clamp to level bounds
+      e.x = Math.max(20, Math.min(e.x, 2380 - e.w))
+      e.y = Math.max(50, Math.min(e.y, 580))
+    } else {
+      resolvePhysics(e, gameDt)
+    }
   }
 
   // ── Bullets ──
@@ -434,6 +478,18 @@ export function update(dt: number) {
   if (state.comboTimer > 0) {
     state.comboTimer -= gameDt
     if (state.comboTimer <= 0) state.comboCount = 0
+  }
+
+  // ── Multi-kill Timer ──
+  if (state.multiKillTimer > 0) {
+    state.multiKillTimer -= dt
+    if (state.multiKillTimer <= 0) state.multiKillCount = 0
+  }
+
+  // ── Kill Feed ──
+  for (let i = state.killFeed.length - 1; i >= 0; i--) {
+    state.killFeed[i].life -= dt
+    if (state.killFeed[i].life <= 0) state.killFeed.splice(i, 1)
   }
 
   // ── Hit Marker ──

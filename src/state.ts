@@ -8,6 +8,7 @@ import type {
   Enemy,
   FloatingText,
   HealthPickup,
+  KillFeedEntry,
   Particle,
   PlayerAnim,
   ShellCasing,
@@ -139,4 +140,12 @@ export const state = {
     m16: WEAPONS.m16.magSize,
     sniper: WEAPONS.sniper.magSize,
   } as Record<WeaponType, number>,
+
+  // Kill feed
+  killFeed: [] as KillFeedEntry[],
+  multiKillCount: 0,
+  multiKillTimer: 0,
+
+  // Dual pistol state
+  pistolHand: 0 as 0 | 1, // 0 = right, 1 = left
 }

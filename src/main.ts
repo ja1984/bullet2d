@@ -7,6 +7,7 @@ import { loadPlayerSprites } from './sprites/playerSprites'
 import { loadEnemySprites } from './sprites/enemySprites'
 import { loadWeaponSprites } from './sprites/weaponSprites'
 import { spawnWeaponPickups } from './systems/pickups'
+import { setupDebug } from './debug'
 import { spawnCoverBoxes } from './systems/waves'
 import { update } from './update'
 import { render, renderTitleScreen } from './rendering/renderer'
@@ -22,6 +23,7 @@ state.ctx = ctx
 // ─── Init ────────────────────────────────────────────────────────────────────
 
 setupInput(canvas)
+setupDebug()
 loadPlayerSprites()
 loadEnemySprites('grunt', {
   idle: { frames: 4, fps: 6 },
@@ -75,6 +77,9 @@ export function restart() {
   state.comboCount = 0
   state.comboTimer = 0
   state.hitMarkerTimer = 0
+  state.killFeed.length = 0
+  state.multiKillCount = 0
+  state.multiKillTimer = 0
   state.killCount = 0
   state.totalScore = 0
   state.wave = 0

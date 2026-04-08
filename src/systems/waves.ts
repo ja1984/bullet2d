@@ -1,7 +1,7 @@
 // ─── Wave System ─────────────────────────────────────────────────────────────
 
 import type { CoverBox, EnemyBehavior } from '../types'
-import { ENEMY_CONFIGS, spawnPositions } from '../constants'
+import { ENEMY_CONFIGS, LEVELS, spawnPositions, setLevel } from '../constants'
 import { state } from '../state'
 
 // Difficulty multiplier — enemies get tougher each wave
@@ -14,7 +14,9 @@ export function spawnEnemy(x: number, y: number, behavior: EnemyBehavior) {
   const diff = getDifficultyMult()
   const scaledHp = Math.round(cfg.hp * diff)
   state.enemies.push({
-    x, y, w: behavior === 'boss' ? 36 : 24, h: behavior === 'boss' ? 56 : 44,
+    x, y,
+    w: behavior === 'boss' ? 36 : behavior === 'drone' ? 16 : 24,
+    h: behavior === 'boss' ? 56 : behavior === 'drone' ? 16 : 44,
     hp: scaledHp, maxHp: scaledHp,
     vx: 0, vy: 0,
     onGround: false,
@@ -45,7 +47,7 @@ export function getWaveEnemies(waveNum: number): { behavior: EnemyBehavior; coun
   if (waveNum <= 1) return [{ behavior: 'grunt', count: 4 }]
   if (waveNum === 2) return [{ behavior: 'grunt', count: 5 }, { behavior: 'shotgunner', count: 1 }]
   if (waveNum === 3) return [{ behavior: 'grunt', count: 4 }, { behavior: 'shotgunner', count: 2 }, { behavior: 'sniper', count: 1 }]
-  if (waveNum === 4) return [{ behavior: 'grunt', count: 3 }, { behavior: 'rusher', count: 3 }, { behavior: 'sniper', count: 1 }]
+  if (waveNum === 4) return [{ behavior: 'grunt', count: 3 }, { behavior: 'rusher', count: 3 }, { behavior: 'drone', count: 2 }]
   // Wave 6+ scales up
   const base = waveNum - 3
   return [
@@ -53,11 +55,17 @@ export function getWaveEnemies(waveNum: number): { behavior: EnemyBehavior; coun
     { behavior: 'shotgunner', count: 1 + Math.floor(base / 2) },
     { behavior: 'sniper', count: 1 + Math.floor(base / 3) },
     { behavior: 'rusher', count: 1 + Math.floor(base / 2) },
+    { behavior: 'drone', count: Math.floor(base / 2) },
   ]
 }
 
 export function startWave() {
   state.wave++
+  // Switch level every 5 waves
+  if (state.wave === 1 || state.wave % 5 === 1) {
+    const levelIdx = Math.floor((state.wave - 1) / 5) % LEVELS.length
+    setLevel(levelIdx)
+  }
   state.waveState = 'active'
   const waveEnemies = getWaveEnemies(state.wave)
   let spawnIdx = 0

@@ -89,6 +89,19 @@ export function drawHUD() {
     ctx.fillText(`${comboCount}x COMBO`, CANVAS_W - 160, 58)
   }
 
+  // Kill feed — right side of screen
+  for (let i = 0; i < state.killFeed.length; i++) {
+    const kf = state.killFeed[i]
+    const alpha = Math.min(1, kf.life / 0.5) // fade out in last 0.5s
+    ctx.globalAlpha = alpha
+    ctx.fillStyle = kf.color
+    ctx.font = 'bold 16px monospace'
+    ctx.textAlign = 'right'
+    ctx.fillText(kf.text, CANVAS_W - 20, 80 + i * 22)
+    ctx.textAlign = 'left'
+  }
+  ctx.globalAlpha = 1
+
   // Wave display
   ctx.fillStyle = '#aaa'
   ctx.font = 'bold 12px monospace'

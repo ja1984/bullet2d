@@ -23,8 +23,19 @@ export function updateBullets(gameDt: number) {
 
     // Hit platforms
     let hitWall = false
-    for (const p of platforms) {
+    for (let pi = platforms.length - 1; pi >= 0; pi--) {
+      const p = platforms[pi]
       if (b.x >= p.x && b.x <= p.x + p.w && b.y >= p.y && b.y <= p.y + p.h) {
+        if (p.destructible && p.hp !== undefined) {
+          p.hp -= b.damage
+          spawnParticles(b.x, b.y, 3, '#aa8855', 60)
+          if (p.hp <= 0) {
+            SFX.explosion()
+            spawnParticles(p.x + p.w / 2, p.y + p.h / 2, 12, '#aa8855', 180)
+            state.screenShake = 4
+            platforms.splice(pi, 1)
+          }
+        }
         hitWall = true
         break
       }
@@ -153,6 +164,23 @@ export function updateBullets(gameDt: number) {
               amount: dropAmounts[dropType],
             })
           }
+
+          // Kill feed
+          state.multiKillCount++
+          state.multiKillTimer = 1.5
+          if (hitZone === 'head') {
+            state.killFeed.push({ text: 'HEADSHOT!', color: '#ff2222', life: 2.5, maxLife: 2.5 })
+          }
+          if (state.multiKillCount === 2) {
+            state.killFeed.push({ text: 'DOUBLE KILL!', color: '#ff8844', life: 2.5, maxLife: 2.5 })
+          } else if (state.multiKillCount === 3) {
+            state.killFeed.push({ text: 'TRIPLE KILL!', color: '#ffaa22', life: 2.5, maxLife: 2.5 })
+          } else if (state.multiKillCount === 4) {
+            state.killFeed.push({ text: 'QUAD KILL!', color: '#ffcc00', life: 3.0, maxLife: 3.0 })
+          } else if (state.multiKillCount >= 5) {
+            state.killFeed.push({ text: 'RAMPAGE!', color: '#ff00ff', life: 3.0, maxLife: 3.0 })
+          }
+          if (state.killFeed.length > 5) state.killFeed.shift()
 
           // Kill cam — slow-mo on last enemy of wave
           const aliveCount = enemies.filter(en => en !== e && en.state !== 'dead').length

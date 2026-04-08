@@ -26,6 +26,14 @@ export function setupInput(canvas: HTMLCanvasElement) {
     } else if (e.code === 'Escape' && state.gameState === 'paused') {
       state.gameState = 'playing'
     }
+    if (e.code === 'F11' || (e.code === 'KeyF' && e.ctrlKey)) {
+      e.preventDefault()
+      if (!document.fullscreenElement) {
+        canvas.requestFullscreen()
+      } else {
+        document.exitFullscreen()
+      }
+    }
   })
   window.addEventListener('keyup', (e) => { state.keys[e.code] = false })
   canvas.addEventListener('mousemove', (e) => {
