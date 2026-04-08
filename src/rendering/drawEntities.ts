@@ -1,7 +1,7 @@
 // ─── Draw Entities ───────────────────────────────────────────────────────────
 
 import type { EnemyBehavior, WeaponType } from '../types'
-import { WEAPONS, spriteConfig, ARM_ANCHOR_X, ARM_ANCHOR_Y, ARM_PIVOT_X, ARM_PIVOT_Y, ARM_HAND_X, ARM_HAND_Y, SPRITE_FRAME_SIZE, platforms } from '../constants'
+import { WEAPONS, spriteConfig, ARM_ANCHOR_X, ARM_ANCHOR_Y, ARM_PIVOT_X, ARM_PIVOT_Y, ARM_HAND_X, ARM_HAND_Y, SPRITE_FRAME_SIZE, platforms, GRAVITY, GRENADE_BOUNCE_DAMP } from '../constants'
 import { state } from '../state'
 import { playerSprites, getPlayerAnim, drawSprite } from '../sprites/playerSprites'
 import { drawEnemySprite } from '../sprites/enemySprites'
@@ -303,5 +303,62 @@ export function drawPlayer() {
     ctx.arc(laserEndX, laserEndY, isSniper ? 1.5 : 2, 0, Math.PI * 2)
     ctx.fill()
     ctx.restore()
+  }
+
+  // Grenade trajectory preview while charging
+  if (state.grenadeCharging && state.currentWeapon === 'grenades') {
+    const chargePower = 0.3 + (state.grenadeChargeTime / 1.5) * 0.7
+    const cx = player.x + player.w / 2
+    const cy = player.y + player.h / 2 - 4
+    const baseAngle = Math.atan2(aimWorldY - cy, aimWorldX - cx)
+    let simX = cx
+    let simY = cy
+    let simVx = Math.cos(baseAngle) * WEAPONS.grenades.bulletSpeed * chargePower
+    let simVy = Math.sin(baseAngle) * WEAPONS.grenades.bulletSpeed * chargePower - 200 * chargePower
+    const simDt = 0.02
+    const steps = Math.floor(80 * chargePower)
+
+    ctx.globalAlpha = 0.4
+    for (let s = 0; s < steps; s++) {
+      simVy += GRAVITY * simDt
+      simX += simVx * simDt
+      simY += simVy * simDt
+
+      // Bounce off surfaces
+      const allSolids = [...platforms, ...state.coverBoxes]
+      for (const solid of allSolids) {
+        if (simX >= solid.x && simX <= solid.x + solid.w && simY >= solid.y && simY <= solid.y + solid.h) {
+          const fromTop = simY - solid.y
+          const fromBottom = solid.y + solid.h - simY
+          const fromLeft = simX - solid.x
+          const fromRight = solid.x + solid.w - simX
+          const min = Math.min(fromTop, fromBottom, fromLeft, fromRight)
+          if (min === fromTop || min === fromBottom) {
+            simVy = -simVy * GRENADE_BOUNCE_DAMP
+            simY = min === fromTop ? solid.y : solid.y + solid.h
+          } else {
+            simVx = -simVx * GRENADE_BOUNCE_DAMP
+            simX = min === fromLeft ? solid.x : solid.x + solid.w
+          }
+          simVx *= 0.8
+        }
+      }
+
+      // Draw dot every few steps
+      if (s % 3 === 0) {
+        const dotAlpha = 1 - s / steps
+        ctx.fillStyle = `rgba(100,150,255,${dotAlpha * 0.6})`
+        ctx.beginPath()
+        ctx.arc(simX, simY, 2, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
+    ctx.globalAlpha = 1
+
+    // Charge power bar
+    ctx.fillStyle = 'rgba(0,0,0,0.4)'
+    ctx.fillRect(cx - 15, cy - 20, 30, 4)
+    ctx.fillStyle = `rgb(${Math.floor(255 * chargePower)}, ${Math.floor(200 * (1 - chargePower))}, 50)`
+    ctx.fillRect(cx - 15, cy - 20, 30 * chargePower, 4)
   }
 }

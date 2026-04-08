@@ -4,7 +4,7 @@ import type { WeaponType } from '../types'
 import { COMBO_WINDOW, WEAPONS, platforms } from '../constants'
 import { state } from '../state'
 import { SFX } from '../audio'
-import { spawnParticles } from './particles'
+import { spawnParticles, spawnExplosionLight } from './particles'
 import { enemyTypes } from '../sprites/enemySprites'
 
 export function updateBullets(gameDt: number) {
@@ -13,7 +13,8 @@ export function updateBullets(gameDt: number) {
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i]
     b.trail.push({ x: b.x, y: b.y })
-    if (b.trail.length > 8) b.trail.shift()
+    const maxTrail = state.player.bulletTimeActive ? 20 : 8
+    if (b.trail.length > maxTrail) b.trail.shift()
 
     b.x += b.vx * gameDt
     b.y += b.vy * gameDt
@@ -32,6 +33,7 @@ export function updateBullets(gameDt: number) {
           if (p.hp <= 0) {
             SFX.explosion()
             spawnParticles(p.x + p.w / 2, p.y + p.h / 2, 12, '#aa8855', 180)
+            spawnExplosionLight(p.x + p.w / 2, p.y + p.h / 2)
             state.screenShake = 4
             platforms.splice(pi, 1)
           }
@@ -41,9 +43,22 @@ export function updateBullets(gameDt: number) {
       }
     }
     if (hitWall) {
-      spawnParticles(b.x, b.y, 5, '#ff8', 100)
-      bullets.splice(i, 1)
-      continue
+      if (b.penetrate && !b.ricocheted) {
+        // Ricochet — bounce off wall once
+        b.ricocheted = true
+        // Determine bounce direction (horizontal vs vertical surface)
+        // Simple heuristic: if bullet is more horizontal, flip vy; else flip vx
+        const absVx = Math.abs(b.vx)
+        const absVy = Math.abs(b.vy)
+        if (absVx > absVy) { b.vx = -b.vx } else { b.vy = -b.vy }
+        b.damage *= 0.5
+        spawnParticles(b.x, b.y, 8, '#ffcc44', 120)
+        state.lightFlashes.push({ x: b.x, y: b.y, intensity: 0.5, color: 'rgba(255,200,100,' })
+      } else {
+        spawnParticles(b.x, b.y, 5, '#ff8', 100)
+        bullets.splice(i, 1)
+        continue
+      }
     }
 
     // Hit cover boxes
@@ -58,6 +73,7 @@ export function updateBullets(gameDt: number) {
           SFX.explosion()
           spawnParticles(box.x + box.w / 2, box.y + box.h / 2, 15,
             box.type === 'barrel' ? '#ff6622' : '#aa8855', 200)
+          spawnExplosionLight(box.x + box.w / 2, box.y + box.h / 2)
           state.screenShake = 6
           coverBoxes.splice(j, 1)
         }
@@ -107,6 +123,7 @@ export function updateBullets(gameDt: number) {
 
         // Visual feedback per zone
         state.hitMarkerTimer = 0.15
+        state.shotsHit++
         if (hitZone === 'head') {
           spawnParticles(b.x, b.y, 15, '#ff2222', 200)
           state.screenShake = 8
@@ -153,9 +170,9 @@ export function updateBullets(gameDt: number) {
 
           // Ammo drop (40% chance)
           if (Math.random() < 0.4) {
-            const dropTypes: WeaponType[] = ['shotgun', 'm16', 'sniper']
+            const dropTypes: WeaponType[] = ['shotgun', 'm16', 'sniper', 'grenades']
             const dropType = dropTypes[Math.floor(Math.random() * dropTypes.length)]
-            const dropAmounts: Record<WeaponType, number> = { pistol: 0, shotgun: 4, m16: 15, sniper: 3 }
+            const dropAmounts: Record<WeaponType, number> = { pistol: 0, shotgun: 4, m16: 15, sniper: 3, grenades: 2 }
             ammoPickups.push({
               x: e.x + e.w / 2, y: e.y,
               vy: -120, onGround: false,
@@ -188,6 +205,11 @@ export function updateBullets(gameDt: number) {
             state.killCamActive = true
             state.killCamTimer = 1.5
           }
+        }
+        // Sniper penetration — 60% chance to go through
+        if (b.penetrate && Math.random() < 0.6) {
+          b.damage *= 0.7 // reduce damage on pass-through
+          continue // don't break — check next enemy
         }
         hit = true
         break

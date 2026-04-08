@@ -5,7 +5,7 @@ import type { WeaponSprite, WeaponType } from '../types'
 export const weaponSprites: Record<WeaponType, WeaponSprite> = {} as any
 
 export function loadWeaponSprites() {
-  const weapons: WeaponType[] = ['pistol', 'shotgun', 'm16', 'sniper']
+  const weapons: WeaponType[] = ['pistol', 'shotgun', 'm16', 'sniper', 'grenades']
   for (const name of weapons) {
     const sprite: WeaponSprite = {
       image: new Image(),

@@ -9,6 +9,7 @@ import { loadWeaponSprites } from './sprites/weaponSprites'
 import { spawnWeaponPickups } from './systems/pickups'
 import { setupDebug } from './debug'
 import { spawnCoverBoxes } from './systems/waves'
+import { spawnAmbientObjects } from './systems/ambient'
 import { update } from './update'
 import { render, renderTitleScreen } from './rendering/renderer'
 
@@ -46,6 +47,7 @@ armImg.onerror = () => console.warn('Arm sprite not found: sprites/player/arm/ar
 armImg.src = 'sprites/player/arm/arm_0.png'
 spawnWeaponPickups()
 spawnCoverBoxes()
+spawnAmbientObjects()
 
 // ─── Restart ─────────────────────────────────────────────────────────────────
 
@@ -63,6 +65,9 @@ export function restart() {
   player.jumpHoldTime = 0
   player.jumpWasReleased = true
   player.landingTimer = 0
+  player.wallSliding = false
+  player.wallDir = 0
+  player.wallJumpCooldown = 0
   player.bulletTimeEnergy = BULLET_TIME_MAX
   player.bulletTimeActive = false
   player.hitFlash = 0
@@ -80,6 +85,12 @@ export function restart() {
   state.killFeed.length = 0
   state.multiKillCount = 0
   state.multiKillTimer = 0
+  state.shotsFired = 0
+  state.shotsHit = 0
+  state.scoreMultiplier = 1.0
+  state.raindrops.length = 0
+  state.lightFlashes.length = 0
+  spawnAmbientObjects()
   state.killCount = 0
   state.totalScore = 0
   state.wave = 0
@@ -96,13 +107,16 @@ export function restart() {
   player.reloading = false
   player.reloadTimer = 0
   state.playerAmmo.pistol = -1
-  state.playerAmmo.shotgun = 12
-  state.playerAmmo.m16 = 90
-  state.playerAmmo.sniper = 10
+  state.playerAmmo.shotgun = 0
+  state.playerAmmo.m16 = 0
+  state.playerAmmo.sniper = 0
+  state.playerAmmo.grenades = 3
   state.magRounds.pistol = WEAPONS.pistol.magSize
   state.magRounds.shotgun = WEAPONS.shotgun.magSize
   state.magRounds.m16 = WEAPONS.m16.magSize
   state.magRounds.sniper = WEAPONS.sniper.magSize
+  state.magRounds.grenades = WEAPONS.grenades.magSize
+  state.grenades.length = 0
   for (const wp of state.weaponPickups) wp.collected = false
 }
 

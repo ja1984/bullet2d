@@ -10,6 +10,10 @@ export const ARM_PIVOT_Y = 30   // pivot point in 68x68 arm sprite (from top)
 export const ARM_HAND_X = 36    // hand/grip position in 68x68 arm sprite (from left)
 export const ARM_HAND_Y = 45    // hand/grip position in 68x68 arm sprite (from top)
 
+export const WALL_SLIDE_SPEED = 60    // max fall speed while wall sliding
+export const WALL_JUMP_FORCE_X = 300  // horizontal push off wall
+export const WALL_JUMP_FORCE_Y = 420  // vertical jump force off wall
+
 export const CANVAS_W = 1280
 export const CANVAS_H = 720
 export const GRAVITY = 1800
@@ -91,7 +95,25 @@ export const WEAPONS: Record<WeaponType, WeaponDef> = {
     magSize: 5,
     reloadTime: 2.2,
   },
+  grenades: {
+    name: 'GRENADES',
+    fireRate: 0.8,
+    bulletSpeed: 800,
+    damage: 80,
+    pellets: 1,
+    spread: 0,
+    shake: 4,
+    color: '#88cc44',
+    ammo: 3,
+    auto: false,
+    magSize: 1,
+    reloadTime: 0.5,
+  },
 }
+
+export const GRENADE_FUSE = 1.5       // seconds before explosion
+export const GRENADE_RADIUS = 100     // explosion radius
+export const GRENADE_BOUNCE_DAMP = 0.5 // velocity kept after bounce
 
 // ─── Sprite Config ──────────────────────────────────────────────────────────
 

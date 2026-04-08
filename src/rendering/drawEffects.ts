@@ -1,6 +1,6 @@
 // ─── Draw Effects ────────────────────────────────────────────────────────────
 
-import { WEAPONS } from '../constants'
+import { WEAPONS, CANVAS_W, CANVAS_H, PLAYER_MAX_HP } from '../constants'
 import { state } from '../state'
 import { weaponSprites } from '../sprites/weaponSprites'
 
@@ -8,9 +8,15 @@ export function drawBullets() {
   const ctx = state.ctx!
 
   for (const b of state.bullets) {
-    ctx.strokeStyle = b.owner === 'player' ? 'rgba(255,200,50,0.4)' : 'rgba(255,80,80,0.4)'
-    ctx.lineWidth = 2
+    const isBT = state.player.bulletTimeActive
+    // Trail — longer and glowing during bullet time
     if (b.trail.length > 1) {
+      const trailAlpha = isBT ? 0.6 : 0.4
+      const trailWidth = isBT ? 3 : 2
+      ctx.strokeStyle = b.owner === 'player'
+        ? `rgba(255,200,50,${trailAlpha})`
+        : `rgba(255,80,80,${trailAlpha})`
+      ctx.lineWidth = trailWidth
       ctx.beginPath()
       ctx.moveTo(b.trail[0].x, b.trail[0].y)
       for (let j = 1; j < b.trail.length; j++) {
@@ -18,16 +24,47 @@ export function drawBullets() {
       }
       ctx.lineTo(b.x, b.y)
       ctx.stroke()
+
+      // Extra glow trail during bullet time
+      if (isBT) {
+        const glowTrail = b.owner === 'player' ? 'rgba(255,200,50,0.1)' : 'rgba(255,80,80,0.1)'
+        ctx.strokeStyle = glowTrail
+        ctx.lineWidth = 8
+        ctx.beginPath()
+        ctx.moveTo(b.trail[0].x, b.trail[0].y)
+        for (let j = 1; j < b.trail.length; j++) {
+          ctx.lineTo(b.trail[j].x, b.trail[j].y)
+        }
+        ctx.lineTo(b.x, b.y)
+        ctx.stroke()
+      }
     }
+    // Neon glow
+    const glowColor = b.owner === 'player' ? 'rgba(255,200,50,' : 'rgba(255,80,80,'
+    ctx.fillStyle = glowColor + '0.15)'
+    ctx.beginPath()
+    ctx.arc(b.x, b.y, 10, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = glowColor + '0.25)'
+    ctx.beginPath()
+    ctx.arc(b.x, b.y, 5, 0, Math.PI * 2)
+    ctx.fill()
+
+    // Bullet core
     ctx.fillStyle = b.owner === 'player' ? '#ffc832' : '#ff5555'
     ctx.beginPath()
-    ctx.arc(b.x, b.y, 3, 0, Math.PI * 2)
+    ctx.arc(b.x, b.y, 2.5, 0, Math.PI * 2)
+    ctx.fill()
+    // Bright center
+    ctx.fillStyle = '#fff'
+    ctx.beginPath()
+    ctx.arc(b.x, b.y, 1, 0, Math.PI * 2)
     ctx.fill()
 
     if (state.player.bulletTimeActive) {
-      ctx.fillStyle = b.owner === 'player' ? 'rgba(255,200,50,0.3)' : 'rgba(255,80,80,0.3)'
+      ctx.fillStyle = glowColor + '0.2)'
       ctx.beginPath()
-      ctx.arc(b.x, b.y, 8, 0, Math.PI * 2)
+      ctx.arc(b.x, b.y, 14, 0, Math.PI * 2)
       ctx.fill()
     }
   }
@@ -126,6 +163,35 @@ export function drawWeaponPickups() {
     ctx.textAlign = 'center'
     ctx.fillText(wpDef.name, wx + wp.w / 2, wy - 6)
     ctx.textAlign = 'left'
+  }
+}
+
+export function drawGrenades() {
+  const ctx = state.ctx!
+
+  for (const g of state.grenades) {
+    // Body
+    ctx.fillStyle = '#556633'
+    ctx.beginPath()
+    ctx.arc(g.x, g.y, 5, 0, Math.PI * 2)
+    ctx.fill()
+    // Pin/detail
+    ctx.fillStyle = '#778844'
+    ctx.beginPath()
+    ctx.arc(g.x, g.y, 3, 0, Math.PI * 2)
+    ctx.fill()
+    // Blinking fuse light
+    if (Math.sin(g.fuseTimer * 20) > 0) {
+      ctx.fillStyle = g.fuseTimer < 0.5 ? '#ff2222' : '#ffaa22'
+      ctx.beginPath()
+      ctx.arc(g.x, g.y - 5, 2, 0, Math.PI * 2)
+      ctx.fill()
+      // Glow
+      ctx.fillStyle = g.fuseTimer < 0.5 ? 'rgba(255,0,0,0.2)' : 'rgba(255,170,0,0.15)'
+      ctx.beginPath()
+      ctx.arc(g.x, g.y, 12, 0, Math.PI * 2)
+      ctx.fill()
+    }
   }
 }
 

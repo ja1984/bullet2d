@@ -7,11 +7,17 @@ import type {
   CoverBox,
   Enemy,
   FloatingText,
+  Grenade,
   HealthPickup,
+  Helicopter,
   KillFeedEntry,
   Particle,
+  Pigeon,
   PlayerAnim,
+  Puddle,
   ShellCasing,
+  SteamVent,
+  Streetlight,
   Vec2,
   WeaponPickup,
   WeaponType,
@@ -52,6 +58,10 @@ export const state = {
     rolling: false,
     rollTimer: 0,
     rollDir: 0,
+    // Wall slide/jump state
+    wallSliding: false,
+    wallDir: 0, // -1 = wall on left, 1 = wall on right
+    wallJumpCooldown: 0,
     // Dive state
     diving: false,
     diveTimer: 0,
@@ -82,6 +92,7 @@ export const state = {
   bloodDecals: [] as BloodDecal[],
   ammoPickups: [] as AmmoPickup[],
   coverBoxes: [] as CoverBox[],
+  grenades: [] as Grenade[],
 
   // Scalar state
   timeScale: 1,
@@ -130,15 +141,17 @@ export const state = {
   currentWeapon: 'pistol' as WeaponType,
   playerAmmo: {
     pistol: -1,
-    shotgun: 12,
-    m16: 90,
-    sniper: 10,
+    shotgun: 0,
+    m16: 0,
+    sniper: 0,
+    grenades: 3,
   } as Record<WeaponType, number>,
   magRounds: {
     pistol: WEAPONS.pistol.magSize,
     shotgun: WEAPONS.shotgun.magSize,
     m16: WEAPONS.m16.magSize,
     sniper: WEAPONS.sniper.magSize,
+    grenades: WEAPONS.grenades.magSize,
   } as Record<WeaponType, number>,
 
   // Kill feed
@@ -148,4 +161,29 @@ export const state = {
 
   // Dual pistol state
   pistolHand: 0 as 0 | 1, // 0 = right, 1 = left
+
+  // Grenade charge
+  grenadeCharging: false,
+  grenadeChargeTime: 0,
+
+  // Score multiplier
+  shotsFired: 0,
+  shotsHit: 0,
+  scoreMultiplier: 1.0,
+
+  // Weather
+  raindrops: [] as { x: number; y: number; speed: number; length: number }[],
+
+  // Dynamic lighting
+  lightFlashes: [] as { x: number; y: number; intensity: number; color: string }[],
+
+  // Ambient environment
+  steamVents: [] as SteamVent[],
+  puddles: [] as Puddle[],
+  streetlights: [] as Streetlight[],
+  pigeons: [] as Pigeon[],
+  helicopters: [] as Helicopter[],
+
+  // Reinforcements
+  reinforcementsSent: false,
 }

@@ -72,11 +72,27 @@ export function drawEnemySprite(e: Enemy): boolean {
   const centerX = e.x + e.w / 2
   const centerY = e.y + e.h / 2
 
+  // Behavior color tints
+  const tints: Record<string, string> = {
+    grunt: '', shotgunner: 'rgba(255,120,40,0.15)', sniper: 'rgba(60,140,255,0.15)',
+    rusher: 'rgba(255,50,80,0.15)', boss: 'rgba(255,30,255,0.2)', drone: '',
+  }
+
   ctx.save()
   ctx.translate(centerX, centerY)
   if (flipX) ctx.scale(-1, 1)
   ctx.imageSmoothingEnabled = false
   ctx.drawImage(img, -ENEMY_SPRITE_FRAME_SIZE / 2, -ENEMY_SPRITE_FRAME_SIZE / 2, ENEMY_SPRITE_FRAME_SIZE, ENEMY_SPRITE_FRAME_SIZE)
+
+  // Apply color tint overlay
+  const tint = tints[e.behavior] || ''
+  if (tint) {
+    ctx.globalCompositeOperation = 'source-atop'
+    ctx.fillStyle = tint
+    ctx.fillRect(-ENEMY_SPRITE_FRAME_SIZE / 2, -ENEMY_SPRITE_FRAME_SIZE / 2, ENEMY_SPRITE_FRAME_SIZE, ENEMY_SPRITE_FRAME_SIZE)
+    ctx.globalCompositeOperation = 'source-over'
+  }
+
   ctx.restore()
   return true
 }

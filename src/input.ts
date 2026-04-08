@@ -5,7 +5,7 @@ import { CANVAS_W, CANVAS_H } from './constants'
 import { state } from './state'
 
 export function getAvailableWeapons(): WeaponType[] {
-  const all: WeaponType[] = ['pistol', 'shotgun', 'm16', 'sniper']
+  const all: WeaponType[] = ['pistol', 'shotgun', 'm16', 'sniper', 'grenades']
   return all.filter(w => state.playerAmmo[w] === -1 || state.playerAmmo[w] > 0)
 }
 
@@ -20,7 +20,7 @@ export function switchWeapon(w: WeaponType) {
 export function setupInput(canvas: HTMLCanvasElement) {
   window.addEventListener('keydown', (e) => {
     state.keys[e.code] = true
-    if (e.code === 'Space') e.preventDefault()
+    if (e.code === 'Space' || e.code === 'Tab') { e.preventDefault(); e.stopPropagation() }
     if (e.code === 'Escape' && state.gameState === 'playing') {
       state.gameState = 'paused'
     } else if (e.code === 'Escape' && state.gameState === 'paused') {
@@ -34,7 +34,7 @@ export function setupInput(canvas: HTMLCanvasElement) {
         document.exitFullscreen()
       }
     }
-  })
+  }, { capture: true })
   window.addEventListener('keyup', (e) => { state.keys[e.code] = false })
   canvas.addEventListener('mousemove', (e) => {
     const rect = canvas.getBoundingClientRect()
@@ -53,6 +53,7 @@ export function setupInput(canvas: HTMLCanvasElement) {
     if (e.code === 'Digit2' && state.playerAmmo.shotgun > 0) switchWeapon('shotgun')
     if (e.code === 'Digit3' && state.playerAmmo.m16 > 0) switchWeapon('m16')
     if (e.code === 'Digit4' && state.playerAmmo.sniper > 0) switchWeapon('sniper')
+    if (e.code === 'Digit5' && state.playerAmmo.grenades > 0) switchWeapon('grenades')
   })
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault()

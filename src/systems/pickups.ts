@@ -18,7 +18,9 @@ export function updateWeaponPickups(dt: number) {
       wp.collected = true
       const wpDef = WEAPONS[wp.type]
       state.playerAmmo[wp.type] += wpDef.ammo
-      state.currentWeapon = wp.type
+      // Only switch to it if player doesn't already have it
+      const hadWeapon = state.playerAmmo[wp.type] - wpDef.ammo > 0 || state.playerAmmo[wp.type] === -1
+      if (!hadWeapon) state.currentWeapon = wp.type
       floatingTexts.push({
         x: player.x + player.w / 2, y: player.y - 15,
         text: `+${wpDef.name}`, color: wpDef.color,

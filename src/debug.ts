@@ -53,7 +53,8 @@ export function setupDebug() {
     state.playerAmmo.shotgun = 999
     state.playerAmmo.m16 = 999
     state.playerAmmo.sniper = 999
-    for (const w of ['pistol', 'shotgun', 'm16', 'sniper'] as const) {
+    state.playerAmmo.grenades = 999
+    for (const w of ['pistol', 'shotgun', 'm16', 'sniper', 'grenades'] as const) {
       state.magRounds[w] = WEAPONS[w].magSize
     }
   })

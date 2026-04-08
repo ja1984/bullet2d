@@ -24,6 +24,8 @@ export interface Bullet {
   life: number
   trail: Vec2[]
   damage: number
+  penetrate?: boolean
+  ricocheted?: boolean
 }
 
 export interface Particle {
@@ -122,6 +124,15 @@ export interface AmmoPickup {
   amount: number
 }
 
+export interface Grenade {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  fuseTimer: number
+  bounces: number
+}
+
 export interface KillFeedEntry {
   text: string
   color: string
@@ -129,7 +140,47 @@ export interface KillFeedEntry {
   maxLife: number
 }
 
-export type WeaponType = 'pistol' | 'shotgun' | 'm16' | 'sniper'
+export interface SteamVent {
+  x: number
+  y: number
+  timer: number
+  interval: number
+  active: boolean
+  burstTimer: number
+}
+
+export interface Puddle {
+  x: number
+  y: number
+  w: number
+}
+
+export interface Streetlight {
+  x: number
+  y: number
+  on: boolean
+  flickerTimer: number
+}
+
+export interface Pigeon {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  grounded: boolean
+  scattered: boolean
+  life: number
+  peckTimer: number
+}
+
+export interface Helicopter {
+  x: number
+  y: number
+  vx: number
+  blinkTimer: number
+}
+
+export type WeaponType = 'pistol' | 'shotgun' | 'm16' | 'sniper' | 'grenades'
 
 export interface WeaponDef {
   name: string

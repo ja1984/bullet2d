@@ -4,17 +4,21 @@ import {
   BULLET_LIFE, BULLET_TIME_MAX, BULLET_TIME_RECHARGE, BULLET_TIME_SCALE,
   DIVE_DURATION, DIVE_SPEED, ENEMY_CONFIGS, GRAVITY, PLAYER_JUMP,
   PLAYER_MAX_HP, PLAYER_SPEED, WEAPONS, DOUBLE_TAP_WINDOW, CANVAS_W, spriteConfig,
-  ARM_ANCHOR_X, ARM_ANCHOR_Y, ARM_PIVOT_X,
+  ARM_ANCHOR_X, ARM_ANCHOR_Y, ARM_PIVOT_X, platforms,
+  WALL_SLIDE_SPEED, WALL_JUMP_FORCE_X, WALL_JUMP_FORCE_Y,
+  GRENADE_FUSE, GRENADE_RADIUS, GRENADE_BOUNCE_DAMP,
 } from './constants'
 import { state } from './state'
 import { SFX } from './audio'
 import { getPlayerAnim } from './sprites/playerSprites'
 import { weaponSprites } from './sprites/weaponSprites'
-import { resolvePhysics } from './systems/physics'
-import { spawnMuzzleFlash } from './systems/particles'
+import { resolvePhysics, checkWallContact } from './systems/physics'
+import { spawnParticles, spawnMuzzleFlash, spawnExplosionLight } from './systems/particles'
 import { updateBullets } from './systems/bullets'
 import { updateWeaponPickups, updateHealthPickups, updateAmmoPickups } from './systems/pickups'
-import { startWave, spawnCoverBoxes, getDifficultyMult } from './systems/waves'
+import { startWave, spawnCoverBoxes, getDifficultyMult, spawnEnemy } from './systems/waves'
+import { updateAmbient, spawnAmbientObjects } from './systems/ambient'
+import type { EnemyBehavior } from './types'
 import { updateCamera } from './systems/camera'
 import { restart } from './main'
 
@@ -38,7 +42,7 @@ export function update(dt: number) {
   }
 
   // Bullet time (toggle on Shift press)
-  const shiftDown = state.keys['ShiftRight'] || state.keys['ShiftLeft']
+  const shiftDown = state.keys['Space']
   if (shiftDown && state.shiftWasUp) {
     state.bulletTimeToggled = !state.bulletTimeToggled
     if (state.bulletTimeToggled) SFX.bulletTimeOn()
@@ -48,7 +52,7 @@ export function update(dt: number) {
 
   if (state.bulletTimeToggled && state.player.bulletTimeEnergy > 0) {
     state.player.bulletTimeActive = true
-    // state.player.bulletTimeEnergy -= dt // DEBUG: infinite bullet time
+    state.player.bulletTimeEnergy -= dt
     if (state.player.bulletTimeEnergy <= 0) {
       state.player.bulletTimeEnergy = 0
       state.player.bulletTimeActive = false
@@ -135,7 +139,7 @@ export function update(dt: number) {
     if (leftDown) player.vx = -moveSpeed
     if (rightDown) player.vx = moveSpeed
 
-    const jumpPressed = state.keys['KeyW'] || state.keys['ArrowUp'] || state.keys['Space']
+    const jumpPressed = state.keys['KeyW'] || state.keys['ArrowUp']
 
     if (player.onGround) {
       // Trigger landing animation only if we were airborne from a jump
@@ -248,6 +252,29 @@ export function update(dt: number) {
   // ── Weapon Pickups ──
   updateWeaponPickups(dt)
 
+  // ── Grenade Charge ──
+  if (state.grenadeCharging) {
+    state.grenadeChargeTime = Math.min(state.grenadeChargeTime + dt, 1.5) // max 1.5s charge
+    // Release — throw grenade
+    if (!state.mouseDown) {
+      state.grenadeCharging = false
+      const chargePower = 0.3 + (state.grenadeChargeTime / 1.5) * 0.7 // 30% to 100% power
+      const cx = player.x + player.w / 2
+      const cy = player.y + player.h / 2 - 4
+      const baseAngle = Math.atan2(aimWorldY - cy, aimWorldX - cx)
+      state.grenades.push({
+        x: cx, y: cy,
+        vx: Math.cos(baseAngle) * WEAPONS.grenades.bulletSpeed * chargePower,
+        vy: Math.sin(baseAngle) * WEAPONS.grenades.bulletSpeed * chargePower - 200 * chargePower,
+        fuseTimer: GRENADE_FUSE,
+        bounces: 0,
+      })
+      state.screenShake = WEAPONS.grenades.shake
+      player.shootCooldown = WEAPONS.grenades.fireRate
+      state.grenadeChargeTime = 0
+    }
+  }
+
   // ── Shooting ──
   const weapon = WEAPONS[state.currentWeapon]
   player.shootCooldown -= dt
@@ -257,12 +284,23 @@ export function update(dt: number) {
     player.reloadTimer -= dt
     if (player.reloadTimer <= 0) {
       player.reloading = false
-      state.magRounds[state.currentWeapon] = weapon.magSize
+      const ammo = state.playerAmmo[state.currentWeapon]
+      if (ammo === -1) {
+        // Infinite ammo — full mag
+        state.magRounds[state.currentWeapon] = weapon.magSize
+      } else {
+        // Deduct from reserves
+        const needed = weapon.magSize - state.magRounds[state.currentWeapon]
+        const toLoad = Math.min(needed, ammo)
+        state.magRounds[state.currentWeapon] += toLoad
+        state.playerAmmo[state.currentWeapon] -= toLoad
+      }
     }
   }
 
   // Manual reload with R
-  if (state.keys['KeyR'] && !player.reloading && state.magRounds[state.currentWeapon] < weapon.magSize) {
+  const hasReserves = state.playerAmmo[state.currentWeapon] === -1 || state.playerAmmo[state.currentWeapon] > 0
+  if (state.keys['KeyR'] && !player.reloading && state.magRounds[state.currentWeapon] < weapon.magSize && hasReserves) {
     player.reloading = true
     player.reloadTimer = weapon.reloadTime
     SFX.reload()
@@ -280,7 +318,26 @@ export function update(dt: number) {
       return
     }
     state.magRounds[state.currentWeapon]--
+    state.shotsFired++
 
+    // Auto-reload when mag empties (only if reserves available)
+    if (state.magRounds[state.currentWeapon] <= 0) {
+      const hasAmmoReserve = state.playerAmmo[state.currentWeapon] === -1 || state.playerAmmo[state.currentWeapon] > 0
+      if (hasAmmoReserve) {
+        player.reloading = true
+        player.reloadTimer = weapon.reloadTime
+        SFX.reload()
+      } else {
+        // Out of ammo — switch to pistol
+        state.currentWeapon = 'pistol'
+      }
+    }
+
+    if (state.currentWeapon === 'grenades') {
+      // Start charging grenade
+      state.grenadeCharging = true
+      state.grenadeChargeTime = 0
+    } else {
     // Dual pistols — alternate hands, faster fire rate
     const isDualPistol = state.currentWeapon === 'pistol'
     player.shootCooldown = isDualPistol ? weapon.fireRate * 0.6 : weapon.fireRate
@@ -307,6 +364,7 @@ export function update(dt: number) {
         life: BULLET_LIFE,
         trail: [],
         damage: weapon.damage,
+        penetrate: state.currentWeapon === 'sniper',
       })
     }
     spawnMuzzleFlash(cx + Math.cos(baseAngle) * gunDist, cy + Math.sin(baseAngle) * gunDist, baseAngle)
@@ -330,6 +388,7 @@ export function update(dt: number) {
     else if (state.currentWeapon === 'shotgun') SFX.shotgunShot()
     else if (state.currentWeapon === 'm16') SFX.m16Shot()
     else if (state.currentWeapon === 'sniper') SFX.sniperShot()
+    } // close else (non-grenade weapons)
   }
 
   // ── Enemies ──
@@ -427,6 +486,23 @@ export function update(dt: number) {
       }
     }
 
+    // Dodge — sniper and rusher enemies try to dodge incoming bullets
+    if ((e.behavior === 'sniper' || e.behavior === 'rusher') && e.state === 'alert' && e.onGround) {
+      for (const b of state.bullets) {
+        if (b.owner !== 'player') continue
+        const bDx = b.x - e.x - e.w / 2
+        const bDy = b.y - e.y - e.h / 2
+        const bDist = Math.sqrt(bDx * bDx + bDy * bDy)
+        if (bDist < 80 && bDist > 10) {
+          // Bullet is close — dodge perpendicular to bullet direction
+          const dodgeDir = (b.vy * bDx - b.vx * bDy) > 0 ? 1 : -1
+          e.vy = -250
+          e.vx = dodgeDir * 150
+          break
+        }
+      }
+    }
+
     if (e.behavior === 'drone') {
       // Drones fly — manual position update, no gravity
       e.x += e.vx * gameDt
@@ -441,6 +517,111 @@ export function update(dt: number) {
 
   // ── Bullets ──
   updateBullets(gameDt)
+
+  // ── Grenades ──
+  for (let i = state.grenades.length - 1; i >= 0; i--) {
+    const g = state.grenades[i]
+    g.vy += GRAVITY * gameDt
+    g.x += g.vx * gameDt
+    g.y += g.vy * gameDt
+    g.fuseTimer -= gameDt
+
+    // Bounce off platforms and cover
+    const allSolids = [...platforms, ...state.coverBoxes]
+    for (const s of allSolids) {
+      if (g.x >= s.x && g.x <= s.x + s.w && g.y >= s.y && g.y <= s.y + s.h) {
+        // Push out and bounce
+        const fromTop = g.y - s.y
+        const fromBottom = s.y + s.h - g.y
+        const fromLeft = g.x - s.x
+        const fromRight = s.x + s.w - g.x
+        const min = Math.min(fromTop, fromBottom, fromLeft, fromRight)
+
+        if (min === fromTop || min === fromBottom) {
+          g.vy = -g.vy * GRENADE_BOUNCE_DAMP
+          g.y = min === fromTop ? s.y : s.y + s.h
+        } else {
+          g.vx = -g.vx * GRENADE_BOUNCE_DAMP
+          g.x = min === fromLeft ? s.x : s.x + s.w
+        }
+        g.bounces++
+        // Friction
+        g.vx *= 0.8
+      }
+    }
+
+    // Fuse trail — blinking particle
+    if (Math.sin(g.fuseTimer * 20) > 0) {
+      state.particles.push({
+        x: g.x, y: g.y,
+        vx: (Math.random() - 0.5) * 20,
+        vy: -20 - Math.random() * 20,
+        life: 0.15, maxLife: 0.15,
+        color: g.fuseTimer < 0.5 ? '#ff2222' : '#ffaa22',
+        size: 2,
+      })
+    }
+
+    // Explode
+    if (g.fuseTimer <= 0) {
+      // Damage enemies in radius
+      for (const e of state.enemies) {
+        if (e.state === 'dead') continue
+        const dx = (e.x + e.w / 2) - g.x
+        const dy = (e.y + e.h / 2) - g.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        if (dist < GRENADE_RADIUS) {
+          const falloff = 1 - dist / GRENADE_RADIUS
+          const dmg = WEAPONS.grenades.damage * falloff
+          e.hp -= dmg
+          e.hitTimer = 0.3
+          e.showHpTimer = 2
+          e.vx = (dx / dist) * 200 * falloff
+          e.vy = -150 * falloff
+          state.floatingTexts.push({
+            x: e.x + e.w / 2, y: e.y - 5,
+            text: Math.round(dmg).toString(), color: '#ff8844',
+            life: 0.8, maxLife: 0.8,
+          })
+          if (e.hp <= 0) {
+            e.state = 'dead'
+            SFX.enemyDeath()
+            e.deathTimer = 3
+            state.killCount++
+            state.killFeed.push({ text: 'EXPLOSION!', color: '#ff6622', life: 2, maxLife: 2 })
+          }
+        }
+      }
+      // Damage player if too close
+      const pdx = (player.x + player.w / 2) - g.x
+      const pdy = (player.y + player.h / 2) - g.y
+      const pdist = Math.sqrt(pdx * pdx + pdy * pdy)
+      if (pdist < GRENADE_RADIUS) {
+        const falloff = 1 - pdist / GRENADE_RADIUS
+        player.hp -= 30 * falloff
+        state.screenShake = 10
+        state.screenFlash = 'rgba(255,0,0,0.7)'
+        state.screenFlashTimer = 0.15
+      }
+      // Destroy cover boxes in radius
+      for (let j = state.coverBoxes.length - 1; j >= 0; j--) {
+        const box = state.coverBoxes[j]
+        const bx = (box.x + box.w / 2) - g.x
+        const by = (box.y + box.h / 2) - g.y
+        if (Math.sqrt(bx * bx + by * by) < GRENADE_RADIUS * 0.7) {
+          spawnParticles(box.x + box.w / 2, box.y + box.h / 2, 10, '#aa8855', 150)
+          state.coverBoxes.splice(j, 1)
+        }
+      }
+      // Big explosion effects
+      spawnParticles(g.x, g.y, 30, '#ff6622', 300)
+      spawnParticles(g.x, g.y, 15, '#ffcc44', 200)
+      spawnExplosionLight(g.x, g.y)
+      SFX.explosion()
+      state.screenShake = 12
+      state.grenades.splice(i, 1)
+    }
+  }
 
   // ── Particles ──
   for (let i = state.particles.length - 1; i >= 0; i--) {
@@ -513,6 +694,63 @@ export function update(dt: number) {
   // ── Ammo Pickups ──
   updateAmmoPickups(gameDt)
 
+  // ── Score Multiplier ──
+  if (state.shotsFired > 0) {
+    const accuracy = state.shotsHit / state.shotsFired
+    state.scoreMultiplier = 0.5 + accuracy * 1.5 // 0.5x at 0% accuracy, 2.0x at 100%
+  }
+
+  // ── Light Flashes ──
+  for (let i = state.lightFlashes.length - 1; i >= 0; i--) {
+    state.lightFlashes[i].intensity -= dt * 8
+    if (state.lightFlashes[i].intensity <= 0) state.lightFlashes.splice(i, 1)
+  }
+
+  // ── Rain ──
+  if (state.raindrops.length < 80) {
+    state.raindrops.push({
+      x: state.camera.x + Math.random() * 1400 - 60,
+      y: state.camera.y - 20,
+      speed: 400 + Math.random() * 200,
+      length: 6 + Math.random() * 8,
+    })
+  }
+  for (let i = state.raindrops.length - 1; i >= 0; i--) {
+    const r = state.raindrops[i]
+    r.y += r.speed * gameDt
+    r.x += 30 * gameDt // slight wind
+
+    // Check if raindrop hit a platform or cover box
+    let hitSurface = false
+    const allSurfaces = [...platforms, ...state.coverBoxes]
+    for (const s of allSurfaces) {
+      if (r.x >= s.x && r.x <= s.x + s.w && r.y >= s.y && r.y <= s.y + 4) {
+        // Splash particles
+        for (let j = 0; j < 2; j++) {
+          state.particles.push({
+            x: r.x,
+            y: s.y,
+            vx: (Math.random() - 0.5) * 30,
+            vy: -15 - Math.random() * 20,
+            life: 0.1 + Math.random() * 0.1,
+            maxLife: 0.15,
+            color: '#8899bb',
+            size: 1 + Math.random(),
+          })
+        }
+        hitSurface = true
+        break
+      }
+    }
+
+    if (hitSurface || r.y > state.camera.y + 720) {
+      state.raindrops.splice(i, 1)
+    }
+  }
+
+  // ── Ambient ──
+  updateAmbient(dt, gameDt)
+
   // ── Camera ──
   updateCamera(dt)
 
@@ -524,12 +762,29 @@ export function update(dt: number) {
     }
   } else if (state.waveState === 'active') {
     const alive = state.enemies.filter(e => e.state !== 'dead').length
+
+    // Reinforcement drops — on wave 6+ when half enemies are dead
+    if (state.wave >= 6 && alive > 0 && alive <= Math.floor(state.waveEnemiesAlive / 2)) {
+      if (!state.reinforcementsSent) {
+        state.reinforcementsSent = true
+        const reinforceCount = 1 + Math.floor(state.wave / 4)
+        const behaviors: EnemyBehavior[] = ['grunt', 'rusher', 'drone']
+        for (let r = 0; r < reinforceCount; r++) {
+          const rx = 200 + Math.random() * 2000
+          const behavior = behaviors[Math.floor(Math.random() * behaviors.length)]
+          // Spawn high up — they'll fall in
+          spawnEnemy(rx, behavior === 'drone' ? 50 : -50, behavior)
+        }
+        state.killFeed.push({ text: 'REINFORCEMENTS!', color: '#ff4466', life: 2.5, maxLife: 2.5 })
+      }
+    }
+
     if (alive === 0) {
       state.waveState = 'cleared'
       SFX.waveCleared()
       state.waveTimer = 4 // time to show score screen
       // Score: base kills + combo bonus + wave bonus
-      state.totalScore += state.killCount * 10 + state.wave * 50
+      state.totalScore += Math.round((state.killCount * 10 + state.wave * 50) * state.scoreMultiplier)
       // Respawn weapon pickups
       for (const wp of state.weaponPickups) wp.collected = false
       // Heal player slightly between waves
@@ -541,6 +796,7 @@ export function update(dt: number) {
       state.enemies.length = 0
       state.bloodDecals.length = 0
       spawnCoverBoxes()
+      spawnAmbientObjects()
       state.waveState = 'countdown'
       state.waveTimer = 3
     }

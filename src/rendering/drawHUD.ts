@@ -3,6 +3,7 @@
 import type { WeaponType } from '../types'
 import { CANVAS_W, CANVAS_H, PLAYER_MAX_HP, BULLET_TIME_MAX, WEAPONS } from '../constants'
 import { state } from '../state'
+import { weaponSprites } from '../sprites/weaponSprites'
 
 export function drawHUD() {
   const ctx = state.ctx!
@@ -10,71 +11,143 @@ export function drawHUD() {
           gameOver, gameState, highScore, gameTime, killCamActive, screenFlashTimer,
           screenFlash, baseCameraZoom, camera } = state
 
-  // HP bar
-  ctx.fillStyle = '#222'
-  ctx.fillRect(20, 20, 200, 16)
+  // ── Circular HP ring (top-left) ──
+  const ringX = 50
+  const ringY = 50
+  const ringR = 28
+  const ringW = 5
   const hpRatio = Math.max(0, player.hp / PLAYER_MAX_HP)
-  ctx.fillStyle = hpRatio > 0.3 ? '#44aa55' : '#dd3333'
-  ctx.fillRect(20, 20, 200 * hpRatio, 16)
-  ctx.strokeStyle = '#555'
-  ctx.lineWidth = 1
-  ctx.strokeRect(20, 20, 200, 16)
+  const hpColor = hpRatio > 0.5 ? '#44aa55' : hpRatio > 0.25 ? '#ddaa22' : '#dd3333'
 
-  ctx.fillStyle = '#fff'
-  ctx.font = '11px monospace'
-  ctx.fillText(`HP ${Math.ceil(player.hp)}`, 24, 33)
+  // Background ring
+  ctx.beginPath()
+  ctx.arc(ringX, ringY, ringR, 0, Math.PI * 2)
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)'
+  ctx.lineWidth = ringW
+  ctx.stroke()
 
-  // Bullet time bar
-  ctx.fillStyle = '#222'
-  ctx.fillRect(20, 42, 200, 10)
-  const btRatio = player.bulletTimeEnergy / BULLET_TIME_MAX
-  ctx.fillStyle = player.bulletTimeActive ? '#ff6644' : '#4488ff'
-  ctx.fillRect(20, 42, 200 * btRatio, 10)
-  ctx.strokeStyle = '#555'
-  ctx.strokeRect(20, 42, 200, 10)
-
-  ctx.fillStyle = '#aaa'
-  ctx.font = '10px monospace'
-  ctx.fillText('BULLET TIME [SHIFT]', 24, 51)
-
-  // Weapon display
-  const wpDef = WEAPONS[state.currentWeapon]
-  ctx.fillStyle = wpDef.color
-  ctx.font = 'bold 14px monospace'
-  ctx.fillText(wpDef.name, 20, 74)
-
-  // Mag display
-  if (player.reloading) {
-    ctx.fillStyle = '#ff8844'
-    ctx.font = 'bold 12px monospace'
-    const reloadPct = Math.floor((1 - player.reloadTimer / wpDef.reloadTime) * 100)
-    ctx.fillText(`RELOADING... ${reloadPct}%`, 20, 90)
-  } else {
-    const magColor = state.magRounds[state.currentWeapon] <= Math.ceil(wpDef.magSize * 0.2) ? '#ff4444' : '#aaa'
-    ctx.fillStyle = magColor
-    ctx.font = '12px monospace'
-    ctx.fillText(`MAG: ${state.magRounds[state.currentWeapon]} / ${wpDef.magSize}`, 20, 90)
+  // HP arc (clockwise from top)
+  if (hpRatio > 0) {
+    ctx.beginPath()
+    ctx.arc(ringX, ringY, ringR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * hpRatio)
+    ctx.strokeStyle = hpColor
+    ctx.lineWidth = ringW
+    ctx.stroke()
   }
 
-  // Weapon slots
-  const slotY = 100
-  const allWeapons: WeaponType[] = ['pistol', 'shotgun', 'm16', 'sniper']
+  // HP text in center
+  ctx.fillStyle = '#fff'
+  ctx.font = 'bold 14px monospace'
+  ctx.textAlign = 'center'
+  ctx.fillText(`${Math.ceil(player.hp)}`, ringX, ringY + 5)
+  ctx.textAlign = 'left'
+
+  // HP label
+  ctx.fillStyle = '#888'
+  ctx.font = '8px monospace'
+  ctx.textAlign = 'center'
+  ctx.fillText('HP', ringX, ringY + 16)
+  ctx.textAlign = 'left'
+
+  // ── Bullet Time ring (inner ring inside HP) ──
+  const btR = ringR - ringW - 3
+  const btW = 3
+  const btRatio = player.bulletTimeEnergy / BULLET_TIME_MAX
+  const btColor = player.bulletTimeActive ? '#ff6644' : '#4488ff'
+
+  // Background ring
+  ctx.beginPath()
+  ctx.arc(ringX, ringY, btR, 0, Math.PI * 2)
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)'
+  ctx.lineWidth = btW
+  ctx.stroke()
+
+  // BT arc
+  if (btRatio > 0) {
+    ctx.beginPath()
+    ctx.arc(ringX, ringY, btR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * btRatio)
+    ctx.strokeStyle = btColor
+    ctx.lineWidth = btW
+    ctx.stroke()
+  }
+
+  // ── Bottom weapon bar ──
+  const allWeapons: WeaponType[] = ['pistol', 'shotgun', 'm16', 'sniper', 'grenades']
+  const slotW = 70
+  const slotH = 48
+  const slotGap = 6
+  const totalBarW = allWeapons.length * slotW + (allWeapons.length - 1) * slotGap
+  const barX = (CANVAS_W - totalBarW) / 2
+  const barY = CANVAS_H - slotH - 12
+
   for (let i = 0; i < allWeapons.length; i++) {
     const w = allWeapons[i]
+    const wpDef = WEAPONS[w]
     const hasAmmo = state.playerAmmo[w] === -1 || state.playerAmmo[w] > 0
     const isActive = w === state.currentWeapon
+    const sx = barX + i * (slotW + slotGap)
 
-    ctx.fillStyle = isActive ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)'
-    ctx.fillRect(20 + i * 56, slotY, 50, 20)
+    // Slot background
+    ctx.fillStyle = isActive ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.4)'
+    ctx.fillRect(sx, barY, slotW, slotH)
+
+    // Active border
     if (isActive) {
-      ctx.strokeStyle = WEAPONS[w].color
+      ctx.strokeStyle = wpDef.color
+      ctx.lineWidth = 2
+      ctx.strokeRect(sx, barY, slotW, slotH)
+    } else {
+      ctx.strokeStyle = 'rgba(255,255,255,0.1)'
       ctx.lineWidth = 1
-      ctx.strokeRect(20 + i * 56, slotY, 50, 20)
+      ctx.strokeRect(sx, barY, slotW, slotH)
     }
 
-    ctx.fillStyle = hasAmmo ? (isActive ? '#fff' : '#888') : '#333'
+    // Weapon sprite icon
+    const ws = weaponSprites[w]
+    ctx.imageSmoothingEnabled = false
+    if (ws?.loaded) {
+      const iconH = 16
+      const iconScale = iconH / ws.h
+      const iconW = ws.w * iconScale
+      ctx.globalAlpha = hasAmmo ? (isActive ? 1 : 0.6) : 0.2
+      ctx.drawImage(ws.image, sx + slotW / 2 - iconW / 2, barY + 6, iconW, iconH)
+      ctx.globalAlpha = 1
+    }
+
+    // Key number
+    ctx.fillStyle = isActive ? '#fff' : '#666'
     ctx.font = '9px monospace'
-    ctx.fillText(`${i + 1} ${WEAPONS[w].name}`, 24 + i * 56, slotY + 13)
+    ctx.fillText(`${i + 1}`, sx + 3, barY + 12)
+
+    // Ammo/mag info
+    if (isActive) {
+      if (player.reloading) {
+        ctx.fillStyle = '#ff8844'
+        ctx.font = 'bold 9px monospace'
+        ctx.textAlign = 'center'
+        const reloadPct = Math.floor((1 - player.reloadTimer / wpDef.reloadTime) * 100)
+        ctx.fillText(`RELOAD ${reloadPct}%`, sx + slotW / 2, barY + slotH - 6)
+        // Reload bar
+        ctx.fillStyle = '#ff8844'
+        ctx.fillRect(sx + 2, barY + slotH - 3, (slotW - 4) * (reloadPct / 100), 2)
+      } else {
+        ctx.fillStyle = state.magRounds[w] <= Math.ceil(wpDef.magSize * 0.2) ? '#ff4444' : '#ccc'
+        ctx.font = 'bold 10px monospace'
+        ctx.textAlign = 'center'
+        const totalAmmo = state.playerAmmo[w] === -1 ? '∞' : state.playerAmmo[w]
+        ctx.fillText(`${state.magRounds[w]}|${totalAmmo}`, sx + slotW / 2, barY + slotH - 6)
+      }
+      ctx.textAlign = 'left'
+    } else {
+      // Inactive — show ammo count
+      const ammo = state.playerAmmo[w]
+      const ammoText = ammo === -1 ? '∞' : ammo.toString()
+      ctx.fillStyle = hasAmmo ? '#555' : '#333'
+      ctx.font = '8px monospace'
+      ctx.textAlign = 'center'
+      ctx.fillText(ammoText, sx + slotW / 2, barY + slotH - 6)
+      ctx.textAlign = 'left'
+    }
   }
 
   // Kill count
@@ -141,12 +214,58 @@ export function drawHUD() {
     ctx.textAlign = 'left'
   }
 
-  // Controls hint
-  ctx.fillStyle = '#555'
-  ctx.font = '11px monospace'
-  ctx.fillText('WASD: Move | Double-tap A/D: Dive | Shift: Bullet Time | 1/2/3 or Scroll: Weapons | R: Reload', 20, CANVAS_H - 14)
 
-  // Bullet time overlay
+  // Weapon wheel — hold Tab
+  if (state.keys['Tab']) {
+    const wcx = CANVAS_W / 2
+    const wcy = CANVAS_H / 2
+    const wheelR = 80
+
+    // Dim background
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
+
+    for (let i = 0; i < allWeapons.length; i++) {
+      const w = allWeapons[i]
+      const angle = -Math.PI / 2 + (i / allWeapons.length) * Math.PI * 2
+      const wx = wcx + Math.cos(angle) * wheelR
+      const wy = wcy + Math.sin(angle) * wheelR
+      const isActive = w === state.currentWeapon
+      const hasAmmo = state.playerAmmo[w] === -1 || state.playerAmmo[w] > 0
+
+      // Slot circle
+      ctx.beginPath()
+      ctx.arc(wx, wy, 28, 0, Math.PI * 2)
+      ctx.fillStyle = isActive ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.6)'
+      ctx.fill()
+      if (isActive) {
+        ctx.strokeStyle = WEAPONS[w].color
+        ctx.lineWidth = 2
+        ctx.stroke()
+      }
+
+      // Weapon icon
+      const ws = weaponSprites[w]
+      if (ws?.loaded) {
+        const iconH = 18
+        const iconScale = iconH / ws.h
+        const iconW = ws.w * iconScale
+        ctx.globalAlpha = hasAmmo ? 1 : 0.3
+        ctx.imageSmoothingEnabled = false
+        ctx.drawImage(ws.image, wx - iconW / 2, wy - iconH / 2 - 2, iconW, iconH)
+        ctx.globalAlpha = 1
+      }
+
+      // Key + name
+      ctx.fillStyle = isActive ? '#fff' : '#888'
+      ctx.font = '9px monospace'
+      ctx.textAlign = 'center'
+      ctx.fillText(`${i + 1}`, wx, wy + 18)
+      ctx.textAlign = 'left'
+    }
+  }
+
+  // Bullet time overlay + cinematic bars
   if (player.bulletTimeActive) {
     ctx.strokeStyle = 'rgba(255, 100, 50, 0.15)'
     ctx.lineWidth = 4
@@ -187,6 +306,28 @@ export function drawHUD() {
   }
   ctx.globalAlpha = 1
 
+  // Damage vignette — red edges when low HP
+  const hpPct = player.hp / PLAYER_MAX_HP
+  if (hpPct < 0.4) {
+    const vignetteAlpha = (1 - hpPct / 0.4) * 0.5
+    const gradient = ctx.createRadialGradient(
+      CANVAS_W / 2, CANVAS_H / 2, CANVAS_W * 0.25,
+      CANVAS_W / 2, CANVAS_H / 2, CANVAS_W * 0.7
+    )
+    gradient.addColorStop(0, 'rgba(0,0,0,0)')
+    gradient.addColorStop(1, `rgba(150,0,0,${vignetteAlpha})`)
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
+
+    // Pulse effect at very low HP
+    if (hpPct < 0.2) {
+      const pulse = Math.sin(gameTime * 4) * 0.1 + 0.1
+      ctx.fillStyle = `rgba(255,0,0,${pulse})`
+      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
+    }
+  }
+
+
 }
 
 export function drawOverlays() {
@@ -226,11 +367,14 @@ export function drawOverlays() {
     ctx.textAlign = 'center'
     ctx.fillText('PAUSED', CANVAS_W / 2, CANVAS_H / 2 - 40)
     ctx.fillStyle = '#aaa'
-    ctx.font = '14px monospace'
-    ctx.fillText('WASD: Move  |  Mouse: Aim & Shoot  |  Shift: Bullet Time', CANVAS_W / 2, CANVAS_H / 2 + 5)
-    ctx.fillText('Double-tap A/D: Dive  |  S: Crouch  |  1/2/3: Weapons  |  R: Reload', CANVAS_W / 2, CANVAS_H / 2 + 25)
+    ctx.font = '13px monospace'
+    ctx.fillText('WASD — Move  |  Mouse — Aim & Shoot', CANVAS_W / 2, CANVAS_H / 2 + 0)
+    ctx.fillText('Space — Bullet Time  |  S — Crouch', CANVAS_W / 2, CANVAS_H / 2 + 18)
+    ctx.fillText('Double-tap A/D — Dive  |  Crouch + A/D — Roll', CANVAS_W / 2, CANVAS_H / 2 + 36)
+    ctx.fillText('1/2/3/4 or Scroll — Weapons  |  R — Reload', CANVAS_W / 2, CANVAS_H / 2 + 54)
+    ctx.fillText('F11 / Ctrl+F — Fullscreen', CANVAS_W / 2, CANVAS_H / 2 + 72)
     ctx.fillStyle = '#666'
-    ctx.fillText('Press ESC to resume', CANVAS_W / 2, CANVAS_H / 2 + 60)
+    ctx.fillText('Press ESC to resume', CANVAS_W / 2, CANVAS_H / 2 + 100)
     ctx.textAlign = 'left'
   }
 }

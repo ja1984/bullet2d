@@ -1,7 +1,7 @@
 // ─── Wave System ─────────────────────────────────────────────────────────────
 
 import type { CoverBox, EnemyBehavior } from '../types'
-import { ENEMY_CONFIGS, LEVELS, spawnPositions, setLevel } from '../constants'
+import { ENEMY_CONFIGS, LEVELS, platforms, spawnPositions, setLevel } from '../constants'
 import { state } from '../state'
 
 // Difficulty multiplier — enemies get tougher each wave
@@ -67,6 +67,7 @@ export function startWave() {
     setLevel(levelIdx)
   }
   state.waveState = 'active'
+  state.reinforcementsSent = false
   const waveEnemies = getWaveEnemies(state.wave)
   let spawnIdx = 0
   for (const group of waveEnemies) {
@@ -105,18 +106,16 @@ export function spawnCoverBoxes() {
       })
     }
   }
-  // A few on platforms
-  const platSpots = [
-    { x: 280, y: 500 }, { x: 600, y: 420 }, { x: 920, y: 350 },
-    { x: 1150, y: 470 }, { x: 1500, y: 380 },
-  ]
-  for (const ps of platSpots) {
+  // A few on platforms — derive spots from the actual level platforms
+  const plats = platforms.filter(p => p.h <= 20 && p.w >= 150) // skip ground, walls, tiny platforms
+  for (const plat of plats) {
     if (Math.random() < 0.4) {
       const t = boxTypes[Math.floor(Math.random() * boxTypes.length)]
       const w = t === 'sandbag' ? 40 : t === 'crate' ? 30 : 20
       const h = t === 'sandbag' ? 20 : t === 'crate' ? 30 : 28
+      const x = plat.x + 20 + Math.random() * (plat.w - w - 40)
       state.coverBoxes.push({
-        x: ps.x, y: ps.y - h - 20, w, h,
+        x, y: plat.y - h, w, h,
         hp: t === 'crate' ? 40 : t === 'barrel' ? 25 : 60,
         maxHp: t === 'crate' ? 40 : t === 'barrel' ? 25 : 60,
         type: t,
