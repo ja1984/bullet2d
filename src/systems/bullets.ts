@@ -1,0 +1,195 @@
+// ─── Bullets ─────────────────────────────────────────────────────────────────
+
+import type { WeaponType } from '../types'
+import { COMBO_WINDOW, WEAPONS, platforms } from '../constants'
+import { state } from '../state'
+import { SFX } from '../audio'
+import { spawnParticles } from './particles'
+import { enemyTypes } from '../sprites/enemySprites'
+
+export function updateBullets(gameDt: number) {
+  const { bullets, coverBoxes, enemies, player, floatingTexts, bloodDecals, ammoPickups } = state
+
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i]
+    b.trail.push({ x: b.x, y: b.y })
+    if (b.trail.length > 8) b.trail.shift()
+
+    b.x += b.vx * gameDt
+    b.y += b.vy * gameDt
+    b.life -= gameDt
+
+    if (b.life <= 0) { bullets.splice(i, 1); continue }
+
+    // Hit platforms
+    let hitWall = false
+    for (const p of platforms) {
+      if (b.x >= p.x && b.x <= p.x + p.w && b.y >= p.y && b.y <= p.y + p.h) {
+        hitWall = true
+        break
+      }
+    }
+    if (hitWall) {
+      spawnParticles(b.x, b.y, 5, '#ff8', 100)
+      bullets.splice(i, 1)
+      continue
+    }
+
+    // Hit cover boxes
+    let hitBox = false
+    for (let j = coverBoxes.length - 1; j >= 0; j--) {
+      const box = coverBoxes[j]
+      if (b.x >= box.x && b.x <= box.x + box.w && b.y >= box.y && b.y <= box.y + box.h) {
+        box.hp -= b.damage
+        spawnParticles(b.x, b.y, 4, box.type === 'barrel' ? '#884422' : '#aa8855', 80)
+        if (box.hp <= 0) {
+          // Destroy box — big particle burst
+          SFX.explosion()
+          spawnParticles(box.x + box.w / 2, box.y + box.h / 2, 15,
+            box.type === 'barrel' ? '#ff6622' : '#aa8855', 200)
+          state.screenShake = 6
+          coverBoxes.splice(j, 1)
+        }
+        hitBox = true
+        break
+      }
+    }
+    if (hitBox) { bullets.splice(i, 1); continue }
+
+    // Hit enemies (player bullets) — 3-zone hitbox: head, body, legs
+    if (b.owner === 'player') {
+      let hit = false
+      for (const e of enemies) {
+        if (e.state === 'dead') continue
+        // Broad check first
+        if (b.x < e.x || b.x > e.x + e.w || b.y < e.y || b.y > e.y + e.h) continue
+
+        let dmgMultiplier: number
+        let hitZone: string
+        const relY = b.y - e.y
+
+        if (relY < 14) {
+          dmgMultiplier = 100 // instakill
+          hitZone = 'head'
+        } else if (relY < 34) {
+          dmgMultiplier = 2.5 // 2-3 pistol shots
+          hitZone = 'body'
+        } else {
+          dmgMultiplier = 1 // ~4 pistol shots
+          hitZone = 'legs'
+        }
+
+        const finalDamage = b.damage * dmgMultiplier
+        e.hp -= finalDamage
+        e.hitTimer = 0.3
+        e.showHpTimer = 2
+
+        // Damage number
+        const dmgText = hitZone === 'head' ? 'HEADSHOT!' : Math.round(finalDamage).toString()
+        const dmgColor = hitZone === 'head' ? '#ff2222' : hitZone === 'body' ? '#ffcc44' : '#ff8844'
+        floatingTexts.push({
+          x: b.x + (Math.random() - 0.5) * 10,
+          y: b.y - 5,
+          text: dmgText, color: dmgColor,
+          life: 0.8, maxLife: 0.8,
+        })
+
+        // Visual feedback per zone
+        state.hitMarkerTimer = 0.15
+        if (hitZone === 'head') {
+          spawnParticles(b.x, b.y, 15, '#ff2222', 200)
+          state.screenShake = 8
+          state.screenFlash = 'rgba(255,255,255,0.8)'
+          state.screenFlashTimer = 0.08
+          SFX.headshot()
+        } else if (hitZone === 'body') {
+          SFX.bulletImpact()
+          spawnParticles(b.x, b.y, 8, '#f44', 150)
+          state.screenShake = 5
+        } else {
+          spawnParticles(b.x, b.y, 5, '#f84', 100)
+          state.screenShake = 3
+          SFX.bulletImpact()
+        }
+
+        if (bloodDecals.length > 100) bloodDecals.shift()
+
+        if (e.hp <= 0) {
+          e.state = 'dead'
+          SFX.enemyDeath()
+          const deathFrames = enemyTypes[e.type]?.spriteConfig.death.frames ?? 10
+          const deathFps = enemyTypes[e.type]?.spriteConfig.death.fps ?? 10
+          e.deathTimer = (deathFrames / deathFps) + 2
+          e.vy = 0
+          e.vx = 0
+          state.killCount++
+          spawnParticles(e.x + e.w / 2, e.y + e.h / 2, 20, '#f44', 250)
+          state.screenShake = 10
+
+          // Combo system
+          state.comboCount++
+          state.comboTimer = COMBO_WINDOW
+          if (state.comboCount >= 2) {
+            floatingTexts.push({
+              x: e.x + e.w / 2, y: e.y - 25,
+              text: `${state.comboCount}x COMBO!`, color: '#ffaa22',
+              life: 1.0, maxLife: 1.0,
+            })
+          }
+
+          // Blood splatter decal on ground
+          bloodDecals.push({ x: e.x + e.w / 2, y: e.y + e.h, size: 15 + Math.random() * 15, alpha: 1 })
+
+          // Ammo drop (40% chance)
+          if (Math.random() < 0.4) {
+            const dropTypes: WeaponType[] = ['shotgun', 'm16', 'sniper']
+            const dropType = dropTypes[Math.floor(Math.random() * dropTypes.length)]
+            const dropAmounts: Record<WeaponType, number> = { pistol: 0, shotgun: 4, m16: 15, sniper: 3 }
+            ammoPickups.push({
+              x: e.x + e.w / 2, y: e.y,
+              vy: -120, onGround: false,
+              life: 15, bobTimer: 0,
+              weaponType: dropType,
+              amount: dropAmounts[dropType],
+            })
+          }
+
+          // Kill cam — slow-mo on last enemy of wave
+          const aliveCount = enemies.filter(en => en !== e && en.state !== 'dead').length
+          if (aliveCount === 0 && state.waveState === 'active') {
+            state.killCamActive = true
+            state.killCamTimer = 1.5
+          }
+        }
+        hit = true
+        break
+      }
+      if (hit) { bullets.splice(i, 1); continue }
+    }
+
+    // Hit player (enemy bullets)
+    if (b.owner === 'enemy') {
+      if (b.x > player.x && b.x < player.x + player.w && b.y > player.y && b.y < player.y + player.h) {
+        player.hp -= b.damage
+        player.hitFlash = 0.15
+        state.screenFlash = 'rgba(255,0,0,0.7)'
+        state.screenFlashTimer = 0.1
+        SFX.playerHit()
+        spawnParticles(b.x, b.y, 6, '#f88', 100)
+        state.screenShake = 6
+        bullets.splice(i, 1)
+        if (player.hp <= 0) {
+          state.gameOver = true
+          state.deathSlowMo = true
+          state.deathSlowMoTimer = 2.0
+          spawnParticles(player.x + player.w / 2, player.y + player.h / 2, 30, '#f44', 300)
+          // Save high score
+          if (state.totalScore > state.highScore) {
+            state.highScore = state.totalScore
+            localStorage.setItem('bulletTime2d_highScore', state.highScore.toString())
+          }
+        }
+      }
+    }
+  }
+}
