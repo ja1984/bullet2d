@@ -20,7 +20,7 @@ import { startWave, getDifficultyMult, spawnEnemy } from './systems/waves'
 import { updateAmbient, spawnAmbientObjects } from './systems/ambient'
 import type { EnemyBehavior } from './types'
 import { updateCamera } from './systems/camera'
-import { sendPlayerState, updateRemotePlayer, syncGameEvents, isOnline, isHost, queueBulletSync } from './systems/network'
+import { sendPlayerState, updateRemotePlayer, syncGameEvents, isOnline, isHost, queueBulletSync, sendRestart } from './systems/network'
 import { restart } from './main'
 
 export function update(dt: number) {
@@ -45,7 +45,11 @@ export function update(dt: number) {
         if (p.life <= 0) state.particles.splice(i, 1)
       }
     }
-    if (state.keys['KeyR']) { restart(); SFX.startAmbient() }
+    if (state.keys['KeyR']) {
+      restart()
+      SFX.startAmbient()
+      if (state.coopEnabled) sendRestart()
+    }
     if (!state.coopEnabled) return
   }
 

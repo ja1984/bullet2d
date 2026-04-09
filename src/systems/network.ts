@@ -7,6 +7,7 @@ import { state, createPlayerState, respawnPlayer } from '../state'
 import { platforms, spawnPositions, setGeneratedLevel, ENEMY_CONFIGS } from '../constants'
 import { SFX } from '../audio'
 import { populateLevel } from './levelgen'
+import { restart } from '../main'
 
 let socket: PartySocket | null = null
 let connected = false
@@ -232,6 +233,28 @@ function connectToRoom(room: string) {
             penetrate: b.p || false,
           })
         }
+        break
+
+      case 'game_restart':
+        // Other player triggered restart — apply their level data
+        restart()
+        SFX.startAmbient()
+        setGeneratedLevel(msg.platforms, msg.spawnPositions)
+        state.coverBoxes.length = 0
+        for (const c of msg.coverBoxes) {
+          state.coverBoxes.push({ ...c, vy: 0, falling: false })
+        }
+        state.weaponPickups.length = 0
+        for (const w of msg.weaponPickups) {
+          state.weaponPickups.push({ ...w, bobTimer: Math.random() * Math.PI * 2, collected: false })
+        }
+        if (state.players.length < 2) {
+          state.players.push(createPlayerState(1, state.player.x + 50, state.player.y))
+        } else {
+          const p2 = state.players[1]
+          p2.hp = 100; p2.x = state.player.x + 50; p2.y = state.player.y
+        }
+        state.coopEnabled = true
         break
     }
   })
@@ -563,6 +586,26 @@ function startMultiplayerGame() {
     state.gameState = 'playing'
     SFX.startAmbient()
   }
+}
+
+// ─── Restart sync ──────────────────────────────────────────────────────────
+
+export function sendRestart() {
+  if (!socket || !connected) return
+  socket.send(JSON.stringify({
+    type: 'game_restart',
+    platforms: platforms.map(p => ({
+      x: p.x, y: p.y, w: p.w, h: p.h,
+      ...(p.destructible ? { destructible: true, hp: p.hp, maxHp: p.maxHp } : {}),
+    })),
+    spawnPositions: spawnPositions.map(s => ({ x: s.x, y: s.y })),
+    coverBoxes: state.coverBoxes.map(c => ({
+      x: c.x, y: c.y, w: c.w, h: c.h, hp: c.hp, maxHp: c.maxHp, type: c.type,
+    })),
+    weaponPickups: state.weaponPickups.map(w => ({
+      x: w.x, y: w.y, w: w.w, h: w.h, type: w.type,
+    })),
+  }))
 }
 
 // ─── Bullet sync ───────────────────────────────────────────────────────────
