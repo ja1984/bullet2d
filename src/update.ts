@@ -109,6 +109,13 @@ export function update(dt: number) {
   }
 
   // ── Player Movement ──
+  // Skip all input/movement when dead
+  if (player.hp <= 0) {
+    player.vx = 0
+    player.vy = 0
+    state.mouseClicked = false
+    // Jump to after shooting/movement — still update enemies, bullets, waves etc.
+  } else {
   const aimWorldX = state.mouse.x + state.camera.x
   const aimWorldY = state.mouse.y + state.camera.y
   player.facing = aimWorldX > player.x + player.w / 2 ? 1 : -1
@@ -439,6 +446,8 @@ export function update(dt: number) {
     else if (state.currentWeapon === 'sniper') SFX.sniperShot()
     } // close else (non-grenade weapons)
   }
+
+  } // close player alive check
 
   // ── Enemies ──
   const guestOnline = isOnline() && !isHost()

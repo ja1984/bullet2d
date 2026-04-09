@@ -283,7 +283,7 @@ export function updateBullets(gameDt: number) {
     }
 
     // Hit player (enemy bullets)
-    if (b.owner === 'enemy' && state.invincibleTimer <= 0) {
+    if (b.owner === 'enemy' && state.invincibleTimer <= 0 && player.hp > 0) {
       if (b.x > player.x && b.x < player.x + player.w && b.y > player.y && b.y < player.y + player.h) {
         player.hp -= b.damage
         player.hitFlash = 0.15
