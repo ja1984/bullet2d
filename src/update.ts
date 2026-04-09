@@ -9,7 +9,7 @@ import {
   GRENADE_FUSE, GRENADE_RADIUS, GRENADE_BOUNCE_DAMP,
 } from './constants'
 import { state, saveScore } from './state'
-import { SFX } from './audio'
+import { SFX, setAudioBulletTime, playSound, updateMusicIntensity } from './audio'
 import { getPlayerAnim } from './sprites/playerSprites'
 import { weaponSprites } from './sprites/weaponSprites'
 import { resolvePhysics, checkWallContact } from './systems/physics'
@@ -74,6 +74,8 @@ export function update(dt: number) {
   }
 
   state.timeScale = (state.player.bulletTimeActive || state.killCamActive) ? BULLET_TIME_SCALE : (state.deathSlowMo ? 0.3 : 1)
+  setAudioBulletTime(state.player.bulletTimeActive)
+  updateMusicIntensity(state.enemies.filter(e => e.state !== 'dead').length)
   const gameDt = dt * state.timeScale
 
   // Player animation timer
@@ -517,6 +519,16 @@ export function update(dt: number) {
         const bx = e.x + e.w / 2 + Math.cos(angle) * 16
         const by = e.y + e.h / 2 - 4 + Math.sin(angle) * 16
         spawnMuzzleFlash(bx, by, angle)
+        // Enemy weapon sound at half volume
+        const enemyWeaponSound: Record<string, () => void> = {
+          grunt: () => playSound('pistol', 0.04),
+          shotgunner: () => playSound('shotgun', 0.08),
+          sniper: () => playSound('sniper', 0.08),
+          rusher: () => playSound('m16', 0.05),
+          boss: () => playSound('shotgun', 0.08),
+          drone: () => playSound('pistol', 0.03),
+        }
+        enemyWeaponSound[e.behavior]?.()
       }
     }
 

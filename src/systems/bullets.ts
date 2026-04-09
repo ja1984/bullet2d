@@ -209,7 +209,7 @@ export function updateBullets(gameDt: number) {
         if (e.hp <= 0) {
           e.state = 'dead'
           state.hitPauseTimer = 0.05
-          SFX.enemyDeath(e.type)
+          if (hitZone !== 'head') SFX.enemyDeath(e.type)
           const deathFrames = enemyTypes[e.type]?.spriteConfig.death.frames ?? 10
           const deathFps = enemyTypes[e.type]?.spriteConfig.death.fps ?? 10
           e.deathTimer = (deathFrames / deathFps) + 2
