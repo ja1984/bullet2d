@@ -103,7 +103,7 @@ function connectToRoom(room: string) {
         ensureRemotePlayer(msg.playerIndex)
         // Host sends level data to new player, then start
         if (isHost()) {
-          sendGameStart()
+          sendGameStart(msg.playerIndex)
           startMultiplayerGame()
         }
         break
@@ -384,10 +384,14 @@ export function updateRemotePlayer(dt: number) {
 
 // ─── Game start sync (host → guest) ────────────────────────────────────────
 
-function sendGameStart() {
+function sendGameStart(targetPlayerIndex?: number) {
   if (!socket || !connected) return
   socket.send(JSON.stringify({
     type: 'game_start',
+    ...(targetPlayerIndex != null ? { _target: targetPlayerIndex } : {}),
+    wave: state.wave,
+    waveState: state.waveState,
+    gameState: state.gameState,
     platforms: platforms.map(p => ({
       x: p.x, y: p.y, w: p.w, h: p.h,
       ...(p.destructible ? { destructible: true, hp: p.hp, maxHp: p.maxHp } : {}),
@@ -398,6 +402,9 @@ function sendGameStart() {
     })),
     weaponPickups: state.weaponPickups.map(w => ({
       x: w.x, y: w.y, w: w.w, h: w.h, type: w.type,
+    })),
+    enemies: state.enemies.filter(e => e.state !== 'dead').map(e => ({
+      x: e.x, y: e.y, behavior: e.behavior,
     })),
   }))
 }
@@ -416,8 +423,36 @@ function applyGameStart(msg: any) {
     state.weaponPickups.push({ ...w, bobTimer: Math.random() * Math.PI * 2, collected: false })
   }
 
-  state.coopEnabled = true
+  // Apply enemies if included (late joiner gets current enemy state)
+  if (msg.enemies && msg.enemies.length > 0) {
+    state.enemies.length = 0
+    const wave = msg.wave || 1
+    const diff = 1 + (wave - 1) * 0.1
+    for (const e of msg.enemies) {
+      const cfg = ENEMY_CONFIGS[e.behavior as keyof typeof ENEMY_CONFIGS]
+      const scaledHp = Math.round(cfg.hp * diff)
+      state.enemies.push({
+        x: e.x, y: e.y,
+        w: e.behavior === 'boss' ? 36 : e.behavior === 'drone' ? 16 : 24,
+        h: e.behavior === 'boss' ? 56 : e.behavior === 'drone' ? 16 : 44,
+        hp: scaledHp, maxHp: scaledHp,
+        vx: 0, vy: 0, onGround: false, facing: -1,
+        shootTimer: Math.random() * cfg.shootInterval,
+        alertTimer: 0, state: 'idle' as const, deathTimer: 0,
+        patrolDir: Math.random() > 0.5 ? 1 : -1,
+        patrolTimer: Math.random() * 3 + 1,
+        type: e.behavior === 'grunt' ? 'thug' : 'grunt',
+        behavior: e.behavior,
+        animTimer: 0, currentAnim: 'idle' as const, hitTimer: 0, showHpTimer: 0,
+      })
+    }
+  }
 
+  // Sync wave/game state
+  if (msg.wave != null) state.wave = msg.wave
+  if (msg.waveState) state.waveState = msg.waveState
+
+  state.coopEnabled = true
   startMultiplayerGame()
 }
 

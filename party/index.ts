@@ -6,6 +6,8 @@ import type * as Party from "partykit/server"
 export default class GameRelay implements Party.Server {
   constructor(readonly room: Party.Room) {}
 
+  nextIndex = 0
+
   onConnect(conn: Party.Connection) {
     const count = [...this.room.getConnections()].length
     if (count > 4) {
@@ -13,12 +15,19 @@ export default class GameRelay implements Party.Server {
       conn.close()
       return
     }
-    // Assign player index (0 or 1)
-    const playerIndex = count - 1 // first connection = 0, second = 1
+    const playerIndex = this.nextIndex++
     conn.setState({ playerIndex })
     conn.send(JSON.stringify({ type: 'welcome', playerIndex, roomCode: this.room.id }))
 
-    // Notify existing players
+    // Tell new player about existing players
+    for (const other of this.room.getConnections()) {
+      if (other.id !== conn.id) {
+        const otherIndex = (other.state as any)?.playerIndex ?? -1
+        conn.send(JSON.stringify({ type: 'player_joined', playerIndex: otherIndex }))
+      }
+    }
+
+    // Notify existing players about the new player
     for (const other of this.room.getConnections()) {
       if (other.id !== conn.id) {
         other.send(JSON.stringify({ type: 'player_joined', playerIndex }))
@@ -27,7 +36,20 @@ export default class GameRelay implements Party.Server {
   }
 
   onMessage(message: string, sender: Party.Connection) {
-    // Relay to all OTHER connections
+    // Support targeted messages — only send to a specific player
+    try {
+      const parsed = JSON.parse(message)
+      if (parsed._target != null) {
+        for (const conn of this.room.getConnections()) {
+          if ((conn.state as any)?.playerIndex === parsed._target) {
+            conn.send(message)
+          }
+        }
+        return
+      }
+    } catch {}
+
+    // Default: relay to all OTHER connections
     for (const conn of this.room.getConnections()) {
       if (conn.id !== sender.id) {
         conn.send(message)
