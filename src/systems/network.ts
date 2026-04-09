@@ -89,7 +89,7 @@ function connectToRoom(room: string) {
     onStatusChange?.('Connection error')
   })
 
-  socket.addEventListener('message', (event) => {
+  socket.addEventListener('message', (event: MessageEvent) => {
     let msg
     try { msg = JSON.parse(event.data) } catch { return }
 
