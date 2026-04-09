@@ -270,6 +270,10 @@ export function update(dt: number) {
 
   resolvePhysics(player, gameDt)
 
+  // Clamp player inside level bounds
+  if (player.x < 20) { player.x = 20; player.vx = 0 }
+  if (player.x + player.w > 2380) { player.x = 2380 - player.w; player.vx = 0 }
+
   // Fall death — below ground level
   if (player.y > 800) {
     player.hp = 0
@@ -435,6 +439,14 @@ export function update(dt: number) {
     if (e.state === 'dead') {
       e.deathTimer -= gameDt
       resolvePhysics(e, gameDt)
+      continue
+    }
+
+    // Kill enemy if fallen out of map
+    if (e.y > 800) {
+      e.state = 'dead'
+      e.deathTimer = 0.1
+      state.killCount++
       continue
     }
 
@@ -828,6 +840,15 @@ export function update(dt: number) {
   for (let i = state.lightFlashes.length - 1; i >= 0; i--) {
     state.lightFlashes[i].intensity -= dt * 8
     if (state.lightFlashes[i].intensity <= 0) state.lightFlashes.splice(i, 1)
+  }
+
+  // ── Thunder ──
+  state.thunderTimer -= dt
+  if (state.thunderFlash > 0) state.thunderFlash -= dt
+  if (state.thunderTimer <= 0) {
+    state.thunderFlash = 0.15
+    state.screenShake = Math.max(state.screenShake, 4)
+    state.thunderTimer = 10 + Math.random() * 25
   }
 
   // ── Rain ──

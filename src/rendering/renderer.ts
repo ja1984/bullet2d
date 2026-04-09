@@ -12,6 +12,14 @@ let reflectionCanvas: HTMLCanvasElement | null = null
 const carImg = new Image()
 carImg.src = 'sprites/other/car.png'
 
+// Title screen idle animation
+const titleIdleFrames: HTMLImageElement[] = []
+for (let i = 0; i < 4; i++) {
+  const img = new Image()
+  img.src = `sprites/player/idle/idle_${i}.png`
+  titleIdleFrames.push(img)
+}
+
 
 export function render() {
   const ctx = state.ctx!
@@ -227,6 +235,14 @@ export function render() {
   }
   ctx.globalAlpha = 1
 
+  // Thunder flash
+  if (state.thunderFlash > 0) {
+    ctx.globalAlpha = state.thunderFlash * 1.5
+    ctx.fillStyle = '#ccccff'
+    ctx.fillRect(camera.x, camera.y, CANVAS_W, CANVAS_H)
+    ctx.globalAlpha = 1
+  }
+
   ctx.restore() // camera
 
   drawHUD()
@@ -329,6 +345,15 @@ export function renderTitleScreen() {
     const carW = carImg.naturalWidth * carScale
     const carH = carImg.naturalHeight * carScale
     ctx.drawImage(carImg, 160, groundY - carH + 4, carW, carH)
+
+    // Player standing by the car
+    const idleFrame = titleIdleFrames[Math.floor(state.gameTime * 6) % titleIdleFrames.length]
+    if (idleFrame?.complete && idleFrame.naturalWidth > 0) {
+      const playerScale = 1
+      const pw = 68 * playerScale
+      const ph = 68 * playerScale
+      ctx.drawImage(idleFrame, 160 + carW - 20, groundY - ph + 10, pw, ph)
+    }
   }
 
   // Drones patrolling

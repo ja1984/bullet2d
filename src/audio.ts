@@ -52,6 +52,42 @@ preloadSound('headshot', 'sounds/fx/headshot.mp3')
 preloadSound('pickup', 'sounds/fx/pickup.mp3')
 preloadSound('grunt_death', 'sounds/enemies/grunt.mp3')
 preloadSound('thug_death', 'sounds/enemies/thug.mp3')
+preloadSound('reload', 'sounds/weapons/reload.mp3')
+
+// Bullet time sound — preload as AudioBuffer for reverse playback
+let slowdownBuffer: AudioBuffer | null = null
+let slowdownReversedBuffer: AudioBuffer | null = null
+
+fetch('sounds/fx/slowdown.mp3')
+  .then(r => r.arrayBuffer())
+  .then(buf => {
+    const ctx = getAudio()
+    return ctx.decodeAudioData(buf)
+  })
+  .then(decoded => {
+    slowdownBuffer = decoded
+    // Create reversed copy
+    const ctx = getAudio()
+    slowdownReversedBuffer = ctx.createBuffer(decoded.numberOfChannels, decoded.length, decoded.sampleRate)
+    for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
+      const src = decoded.getChannelData(ch)
+      const dst = slowdownReversedBuffer.getChannelData(ch)
+      for (let i = 0; i < src.length; i++) {
+        dst[i] = src[src.length - 1 - i]
+      }
+    }
+  })
+  .catch(() => {})
+
+function playBuffer(buffer: AudioBuffer, volume: number) {
+  const ctx = getAudio()
+  const source = ctx.createBufferSource()
+  source.buffer = buffer
+  const gain = ctx.createGain()
+  gain.gain.value = volume * (bulletTimeActive ? 0.3 : 1)
+  source.connect(gain).connect(ctx.destination)
+  source.start()
+}
 
 // Background music
 const bgMusic = new Audio('sounds/environment/background.mp3')
@@ -135,40 +171,12 @@ export const SFX = {
     playSound('headshot', 0.9)
   },
   reload() {
-    const ctx = getAudio()
-    // Click
-    setTimeout(() => playTone(1800, 0.02, 0.15, 'square'), 0)
-    // Clack
-    setTimeout(() => {
-      if (ctx.state === 'running') playTone(1200, 0.03, 0.15, 'square')
-    }, 100)
+    playSound('reload', 0.3)
   },
   bulletTimeOn() {
-    const ctx = getAudio()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.type = 'sine'
-    osc.frequency.setValueAtTime(200, ctx.currentTime)
-    osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.3)
-    gain.gain.setValueAtTime(0.2, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4)
-    osc.connect(gain).connect(ctx.destination)
-    osc.start()
-    osc.stop(ctx.currentTime + 0.4)
-    playNoise(0.3, 0.1, 500)
+    if (slowdownBuffer) playBuffer(slowdownBuffer, 0.5)
   },
   bulletTimeOff() {
-    const ctx = getAudio()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.type = 'sine'
-    osc.frequency.setValueAtTime(80, ctx.currentTime)
-    osc.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.2)
-    gain.gain.setValueAtTime(0.15, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25)
-    osc.connect(gain).connect(ctx.destination)
-    osc.start()
-    osc.stop(ctx.currentTime + 0.25)
   },
   enemyDeath(type?: string) {
     if (type === 'thug') playSound('thug_death', 0.15)

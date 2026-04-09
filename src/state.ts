@@ -191,6 +191,10 @@ export const state = {
   // Invincibility
   invincibleTimer: 0,
 
+  // Thunder
+  thunderTimer: 10 + Math.random() * 20,
+  thunderFlash: 0,
+
   // Reinforcements
   reinforcementsSent: false,
 }
