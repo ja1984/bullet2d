@@ -43,7 +43,7 @@ let onRoomListUpdate: ((rooms: string[]) => void) | null = null
 
 const PARTYKIT_HOST = location.hostname === 'localhost'
   ? 'localhost:1999'
-  : 'bullet2d.jonathanandersson.partykit.dev' // update after deploy
+  : 'bullet2d.ja1984.partykit.dev'
 
 // ─── Connection ─────────────────────────────────────────────────────────────
 
