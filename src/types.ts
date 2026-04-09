@@ -110,7 +110,7 @@ export interface CoverBox {
   h: number
   hp: number
   maxHp: number
-  type: 'crate' | 'barrel' | 'sandbag'
+  type: 'crate' | 'barrel' | 'sandbag' | 'explosive'
 }
 
 export interface AmmoPickup {

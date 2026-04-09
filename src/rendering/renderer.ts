@@ -289,11 +289,11 @@ export function renderTitleScreen() {
 
   // Title
   ctx.fillStyle = '#ff3333'
-  ctx.font = 'bold 52px monospace'
+  ctx.font = 'bold 52px Audiowide, monospace'
   ctx.textAlign = 'center'
-  ctx.fillText('BULLET TIME', CANVAS_W / 2, CANVAS_H / 2 - 80)
+  ctx.fillText('BULLET', CANVAS_W / 2, CANVAS_H / 2 - 80)
   ctx.fillStyle = '#ffc832'
-  ctx.font = 'bold 28px monospace'
+  ctx.font = 'bold 28px Audiowide, monospace'
   ctx.fillText('2 D', CANVAS_W / 2, CANVAS_H / 2 - 45)
 
   // High score

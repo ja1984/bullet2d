@@ -92,6 +92,57 @@ export function drawEnemies() {
         ctx.fillRect(0, -2, 14, 4)
       }
       ctx.restore()
+
+      // Sniper laser sight
+      if (e.behavior === 'sniper' && e.state === 'alert') {
+        const ew2 = weaponSprites['sniper']
+        const targetH = 12
+        const gunLen = ew2?.loaded ? ew2.w * (targetH / ew2.h) : 14
+        const dirX = Math.cos(eGunAngle)
+        const dirY = Math.sin(eGunAngle)
+        const lsx = eArmX + dirX * gunLen
+        const lsy = eArmY + dirY * gunLen
+        const maxRange = 1200
+
+        // Raycast against platforms, cover boxes, and player
+        const playerRect = { x: player.x, y: player.y, w: player.w, h: player.h }
+        const allRects = [...platforms, ...state.coverBoxes, playerRect]
+        let closestT = maxRange
+        for (const r of allRects) {
+          const tMinX = (r.x - lsx) / dirX
+          const tMaxX = (r.x + r.w - lsx) / dirX
+          const tMinY = (r.y - lsy) / dirY
+          const tMaxY = (r.y + r.h - lsy) / dirY
+          const tEnterX = Math.min(tMinX, tMaxX)
+          const tExitX = Math.max(tMinX, tMaxX)
+          const tEnterY = Math.min(tMinY, tMaxY)
+          const tExitY = Math.max(tMinY, tMaxY)
+          const tEnter = Math.max(tEnterX, tEnterY)
+          const tExit = Math.min(tExitX, tExitY)
+          if (tEnter < tExit && tExit > 0 && tEnter > 0 && tEnter < closestT) {
+            closestT = tEnter
+          }
+        }
+
+        const lex = lsx + dirX * closestT
+        const ley = lsy + dirY * closestT
+
+        ctx.save()
+        ctx.globalAlpha = 0.3
+        ctx.strokeStyle = '#ff0000'
+        ctx.lineWidth = 0.5
+        ctx.beginPath()
+        ctx.moveTo(lsx, lsy)
+        ctx.lineTo(lex, ley)
+        ctx.stroke()
+        // Dot at hit point
+        ctx.globalAlpha = 0.5
+        ctx.fillStyle = '#ff0000'
+        ctx.beginPath()
+        ctx.arc(lex, ley, 1.5, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.restore()
+      }
     }
 
     ctx.globalAlpha = 1
@@ -124,7 +175,7 @@ export function drawPlayer() {
   const { player, camera, mouse } = state
   const px = player.x, py = player.y
 
-  if (player.diving || player.rolling) {
+  if (player.rolling) {
     ctx.globalAlpha = 0.2
     ctx.fillStyle = '#6688ff'
     ctx.fillRect(px - player.vx * 0.03, py - player.vy * 0.03, player.w, player.h)

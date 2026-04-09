@@ -184,6 +184,9 @@ export const state = {
   pigeons: [] as Pigeon[],
   helicopters: [] as Helicopter[],
 
+  // Hit pause
+  hitPauseTimer: 0,
+
   // Reinforcements
   reinforcementsSent: false,
 }

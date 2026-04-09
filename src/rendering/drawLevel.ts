@@ -85,6 +85,21 @@ export function drawCoverBoxes() {
       ctx.fillStyle = '#555555'
       ctx.fillRect(box.x, box.y + 4, box.w, 2)
       ctx.fillRect(box.x, box.y + box.h - 6, box.w, 2)
+    } else if (box.type === 'explosive') {
+      // Explosive barrel — red with hazard markings
+      ctx.fillStyle = '#882222'
+      ctx.fillRect(box.x, box.y, box.w, box.h)
+      ctx.fillStyle = '#aa3333'
+      ctx.fillRect(box.x + 2, box.y + 3, box.w - 4, box.h - 6)
+      // Metal bands
+      ctx.fillStyle = '#555555'
+      ctx.fillRect(box.x, box.y + 4, box.w, 2)
+      ctx.fillRect(box.x, box.y + box.h - 6, box.w, 2)
+      // Hazard symbol — small yellow warning
+      ctx.fillStyle = '#ffcc00'
+      ctx.fillRect(box.x + box.w / 2 - 3, box.y + box.h / 2 - 3, 6, 6)
+      ctx.fillStyle = '#882222'
+      ctx.fillRect(box.x + box.w / 2 - 1, box.y + box.h / 2 - 1, 2, 2)
     } else {
       // Sandbag
       ctx.fillStyle = '#8B8B6B'

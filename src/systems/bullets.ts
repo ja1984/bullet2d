@@ -1,7 +1,7 @@
 // ─── Bullets ─────────────────────────────────────────────────────────────────
 
 import type { WeaponType } from '../types'
-import { COMBO_WINDOW, WEAPONS, platforms } from '../constants'
+import { COMBO_WINDOW, GRENADE_RADIUS, WEAPONS, platforms } from '../constants'
 import { state } from '../state'
 import { SFX } from '../audio'
 import { spawnParticles, spawnExplosionLight } from './particles'
@@ -67,14 +67,70 @@ export function updateBullets(gameDt: number) {
       const box = coverBoxes[j]
       if (b.x >= box.x && b.x <= box.x + box.w && b.y >= box.y && b.y <= box.y + box.h) {
         box.hp -= b.damage
-        spawnParticles(b.x, b.y, 4, box.type === 'barrel' ? '#884422' : '#aa8855', 80)
+        spawnParticles(b.x, b.y, 4, box.type === 'explosive' ? '#ff4422' : box.type === 'barrel' ? '#884422' : '#aa8855', 80)
         if (box.hp <= 0) {
-          // Destroy box — big particle burst
-          SFX.explosion()
-          spawnParticles(box.x + box.w / 2, box.y + box.h / 2, 15,
-            box.type === 'barrel' ? '#ff6622' : '#aa8855', 200)
-          spawnExplosionLight(box.x + box.w / 2, box.y + box.h / 2)
-          state.screenShake = 6
+          const cx = box.x + box.w / 2
+          const cy = box.y + box.h / 2
+          if (box.type === 'explosive') {
+            // Explosive barrel — big explosion that damages nearby entities
+            SFX.explosion()
+            spawnParticles(cx, cy, 30, '#ff4400', 350)
+            spawnParticles(cx, cy, 15, '#ffcc00', 250)
+            spawnExplosionLight(cx, cy)
+            state.screenShake = 15
+            state.hitPauseTimer = 0.06
+            const radius = GRENADE_RADIUS * 1.2
+            // Damage enemies
+            for (const e of enemies) {
+              if (e.state === 'dead') continue
+              const edx = (e.x + e.w / 2) - cx
+              const edy = (e.y + e.h / 2) - cy
+              const dist = Math.sqrt(edx * edx + edy * edy)
+              if (dist < radius) {
+                const falloff = 1 - dist / radius
+                const dmg = 60 * falloff
+                e.hp -= dmg
+                e.vy = -150 * falloff
+                e.vx = edx > 0 ? 200 * falloff : -200 * falloff
+                e.showHpTimer = 2
+                if (e.hp <= 0) {
+                  e.state = 'dead'
+                  SFX.enemyDeath()
+                  e.deathTimer = 3
+                  state.killCount++
+                  state.hitPauseTimer = 0.07
+                  spawnParticles(e.x + e.w / 2, e.y + e.h / 2, 20, '#f44', 250)
+                  bloodDecals.push({ x: e.x + e.w / 2, y: e.y + e.h, size: 15 + Math.random() * 15, alpha: 1 })
+                }
+              }
+            }
+            // Damage player
+            const pdx = (player.x + player.w / 2) - cx
+            const pdy = (player.y + player.h / 2) - cy
+            const pDist = Math.sqrt(pdx * pdx + pdy * pdy)
+            if (pDist < radius) {
+              const falloff = 1 - pDist / radius
+              player.hp -= 25 * falloff
+              player.vy = -200 * falloff
+            }
+            // Chain reaction — damage other cover boxes
+            for (const other of coverBoxes) {
+              if (other === box) continue
+              const odx = (other.x + other.w / 2) - cx
+              const ody = (other.y + other.h / 2) - cy
+              const oDist = Math.sqrt(odx * odx + ody * ody)
+              if (oDist < radius) {
+                other.hp -= 40 * (1 - oDist / radius)
+              }
+            }
+          } else {
+            // Normal box destruction
+            SFX.explosion()
+            spawnParticles(cx, cy, 15,
+              box.type === 'barrel' ? '#ff6622' : '#aa8855', 200)
+            spawnExplosionLight(cx, cy)
+            state.screenShake = 6
+          }
           coverBoxes.splice(j, 1)
         }
         hitBox = true
@@ -144,6 +200,7 @@ export function updateBullets(gameDt: number) {
 
         if (e.hp <= 0) {
           e.state = 'dead'
+          state.hitPauseTimer = 0.05
           SFX.enemyDeath()
           const deathFrames = enemyTypes[e.type]?.spriteConfig.death.frames ?? 10
           const deathFps = enemyTypes[e.type]?.spriteConfig.death.fps ?? 10

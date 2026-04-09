@@ -188,7 +188,7 @@ export function drawHUD() {
     ctx.fillStyle = 'rgba(0,0,0,0.4)'
     ctx.fillRect(0, CANVAS_H / 2 - 40, CANVAS_W, 80)
     ctx.fillStyle = '#fff'
-    ctx.font = 'bold 32px monospace'
+    ctx.font = 'bold 32px Audiowide, monospace'
     ctx.textAlign = 'center'
     ctx.fillText(`WAVE ${wave + 1}`, CANVAS_W / 2, CANVAS_H / 2 - 5)
     ctx.fillStyle = '#aaa'
@@ -202,7 +202,7 @@ export function drawHUD() {
     ctx.fillStyle = 'rgba(0,0,0,0.5)'
     ctx.fillRect(0, CANVAS_H / 2 - 60, CANVAS_W, 120)
     ctx.fillStyle = '#44ff44'
-    ctx.font = 'bold 32px monospace'
+    ctx.font = 'bold 32px Audiowide, monospace'
     ctx.textAlign = 'center'
     ctx.fillText(`WAVE ${wave} CLEARED!`, CANVAS_W / 2, CANVAS_H / 2 - 20)
     ctx.fillStyle = '#fff'
@@ -340,7 +340,7 @@ export function drawOverlays() {
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
 
     ctx.fillStyle = '#ff3333'
-    ctx.font = 'bold 48px monospace'
+    ctx.font = 'bold 48px Audiowide, monospace'
     ctx.textAlign = 'center'
     ctx.fillText('WASTED', CANVAS_W / 2, CANVAS_H / 2 - 30)
 
@@ -363,7 +363,7 @@ export function drawOverlays() {
     ctx.fillStyle = 'rgba(0,0,0,0.7)'
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
     ctx.fillStyle = '#fff'
-    ctx.font = 'bold 36px monospace'
+    ctx.font = 'bold 36px Audiowide, monospace'
     ctx.textAlign = 'center'
     ctx.fillText('PAUSED', CANVAS_W / 2, CANVAS_H / 2 - 40)
     ctx.fillStyle = '#aaa'

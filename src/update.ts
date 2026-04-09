@@ -41,6 +41,12 @@ export function update(dt: number) {
     return
   }
 
+  // Hit pause — freeze the game for a few frames on kill
+  if (state.hitPauseTimer > 0) {
+    state.hitPauseTimer -= dt
+    return
+  }
+
   // Bullet time (toggle on Shift press)
   const shiftDown = state.keys['Space']
   if (shiftDown && state.shiftWasUp) {
@@ -219,6 +225,16 @@ export function update(dt: number) {
       player.diving = false
     } else if (player.onGround) {
       player.vx = player.diveDir * DIVE_SPEED * 0.5
+    }
+    // Allow jump to cancel dive
+    const jumpDuringDive = state.keys['KeyW'] || state.keys['ArrowUp']
+    if (jumpDuringDive && player.jumpWasReleased && player.onGround) {
+      player.diving = false
+      player.vy = -PLAYER_JUMP * 0.6
+      player.jumpCount = 1
+      player.jumpHoldTime = gameDt
+      player.wasAirborne = true
+      player.jumpWasReleased = false
     }
   }
 
@@ -585,6 +601,7 @@ export function update(dt: number) {
           })
           if (e.hp <= 0) {
             e.state = 'dead'
+            state.hitPauseTimer = 0.07
             SFX.enemyDeath()
             e.deathTimer = 3
             state.killCount++
@@ -700,6 +717,61 @@ export function update(dt: number) {
     state.scoreMultiplier = 0.5 + accuracy * 1.5 // 0.5x at 0% accuracy, 2.0x at 100%
   }
 
+  // ── Explosive barrel chain reactions ──
+  for (let i = state.coverBoxes.length - 1; i >= 0; i--) {
+    const box = state.coverBoxes[i]
+    if (box.hp <= 0 && box.type === 'explosive') {
+      const cx = box.x + box.w / 2
+      const cy = box.y + box.h / 2
+      SFX.explosion()
+      spawnParticles(cx, cy, 30, '#ff4400', 350)
+      spawnParticles(cx, cy, 15, '#ffcc00', 250)
+      spawnExplosionLight(cx, cy)
+      state.screenShake = 15
+      state.hitPauseTimer = 0.06
+      const radius = 120
+      for (const e of state.enemies) {
+        if (e.state === 'dead') continue
+        const edx = (e.x + e.w / 2) - cx
+        const edy = (e.y + e.h / 2) - cy
+        const dist = Math.sqrt(edx * edx + edy * edy)
+        if (dist < radius) {
+          const falloff = 1 - dist / radius
+          e.hp -= 60 * falloff
+          e.vy = -150 * falloff
+          e.showHpTimer = 2
+          if (e.hp <= 0) {
+            e.state = 'dead'
+            SFX.enemyDeath()
+            e.deathTimer = 3
+            state.killCount++
+          }
+        }
+      }
+      const pdx = (player.x + player.w / 2) - cx
+      const pdy = (player.y + player.h / 2) - cy
+      const pDist = Math.sqrt(pdx * pdx + pdy * pdy)
+      if (pDist < radius) {
+        player.hp -= 25 * (1 - pDist / radius)
+        player.vy = -200 * (1 - pDist / radius)
+      }
+      // Chain to other boxes
+      for (const other of state.coverBoxes) {
+        if (other === box) continue
+        const odx = (other.x + other.w / 2) - cx
+        const ody = (other.y + other.h / 2) - cy
+        if (Math.sqrt(odx * odx + ody * ody) < radius) {
+          other.hp -= 40 * (1 - Math.sqrt(odx * odx + ody * ody) / radius)
+        }
+      }
+      state.coverBoxes.splice(i, 1)
+    } else if (box.hp <= 0) {
+      // Non-explosive box destroyed by chain damage
+      spawnParticles(box.x + box.w / 2, box.y + box.h / 2, 10, '#aa8855', 150)
+      state.coverBoxes.splice(i, 1)
+    }
+  }
+
   // ── Light Flashes ──
   for (let i = state.lightFlashes.length - 1; i >= 0; i--) {
     state.lightFlashes[i].intensity -= dt * 8
@@ -792,6 +864,11 @@ export function update(dt: number) {
     }
   } else if (state.waveState === 'cleared') {
     state.waveTimer -= dt
+    // Auto-disable bullet time shortly after wave clear
+    if (state.waveTimer <= 3.5 && state.bulletTimeToggled) {
+      state.bulletTimeToggled = false
+      player.bulletTimeActive = false
+    }
     if (state.waveTimer <= 0) {
       state.enemies.length = 0
       state.bloodDecals.length = 0

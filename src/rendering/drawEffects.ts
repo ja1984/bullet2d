@@ -11,11 +11,11 @@ export function drawBullets() {
     const isBT = state.player.bulletTimeActive
     // Trail — longer and glowing during bullet time
     if (b.trail.length > 1) {
-      const trailAlpha = isBT ? 0.6 : 0.4
-      const trailWidth = isBT ? 3 : 2
+      const trailAlpha = isBT ? 0.25 : 0.15
+      const trailWidth = isBT ? 1.5 : 0.75
       ctx.strokeStyle = b.owner === 'player'
-        ? `rgba(255,200,50,${trailAlpha})`
-        : `rgba(255,80,80,${trailAlpha})`
+        ? `rgba(200,200,200,${trailAlpha})`
+        : `rgba(200,160,160,${trailAlpha})`
       ctx.lineWidth = trailWidth
       ctx.beginPath()
       ctx.moveTo(b.trail[0].x, b.trail[0].y)
@@ -41,24 +41,24 @@ export function drawBullets() {
     }
     // Neon glow
     const glowColor = b.owner === 'player' ? 'rgba(255,200,50,' : 'rgba(255,80,80,'
-    ctx.fillStyle = glowColor + '0.15)'
+    ctx.fillStyle = glowColor + '0.1)'
     ctx.beginPath()
-    ctx.arc(b.x, b.y, 10, 0, Math.PI * 2)
+    ctx.arc(b.x, b.y, 6, 0, Math.PI * 2)
     ctx.fill()
-    ctx.fillStyle = glowColor + '0.25)'
+    ctx.fillStyle = glowColor + '0.2)'
     ctx.beginPath()
-    ctx.arc(b.x, b.y, 5, 0, Math.PI * 2)
+    ctx.arc(b.x, b.y, 3, 0, Math.PI * 2)
     ctx.fill()
 
     // Bullet core
     ctx.fillStyle = b.owner === 'player' ? '#ffc832' : '#ff5555'
     ctx.beginPath()
-    ctx.arc(b.x, b.y, 2.5, 0, Math.PI * 2)
+    ctx.arc(b.x, b.y, 1.5, 0, Math.PI * 2)
     ctx.fill()
     // Bright center
     ctx.fillStyle = '#fff'
     ctx.beginPath()
-    ctx.arc(b.x, b.y, 1, 0, Math.PI * 2)
+    ctx.arc(b.x, b.y, 0.5, 0, Math.PI * 2)
     ctx.fill()
 
     if (state.player.bulletTimeActive) {

@@ -51,7 +51,7 @@ export function loadPlayerSprites() {
 export function getPlayerAnim(): PlayerAnim {
   const player = state.player
   if (player.rolling) return 'roll'
-  if (player.diving) return 'dive'
+  if (player.diving) return 'run'
   if (player.doubleJumping) return 'roll'
   if (player.crouching) return 'crouch'
   if (player.uncrouchTimer > 0 && player.onGround) return 'uncrouch'

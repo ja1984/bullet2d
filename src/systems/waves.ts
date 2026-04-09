@@ -122,4 +122,17 @@ export function spawnCoverBoxes() {
       })
     }
   }
+  // Explosive barrels — a few scattered on ground
+  const explosiveSpots = [450, 900, 1250, 1700]
+  for (const ex of explosiveSpots) {
+    if (Math.random() < 0.4) {
+      state.coverBoxes.push({
+        x: ex + (Math.random() - 0.5) * 40,
+        y: groundY - 28,
+        w: 20, h: 28,
+        hp: 20, maxHp: 20,
+        type: 'explosive',
+      })
+    }
+  }
 }
