@@ -4,6 +4,7 @@ import type { EnemyBehavior } from './types'
 import { LEVELS, PLAYER_MAX_HP, BULLET_TIME_MAX, WEAPONS, setLevel } from './constants'
 import { state } from './state'
 import { spawnEnemy, spawnCoverBoxes } from './systems/waves'
+import { SFX } from './audio'
 
 let debugOpen = false
 
@@ -102,6 +103,24 @@ export function setupDebug() {
       }
     }
   })
+
+  addSection(panel, 'SOUNDS')
+  addButton(panel, 'Pistol', () => SFX.pistolShot())
+  addButton(panel, 'Shotgun', () => SFX.shotgunShot())
+  addButton(panel, 'M16', () => SFX.m16Shot())
+  addButton(panel, 'Sniper', () => SFX.sniperShot())
+  addButton(panel, 'Hit', () => SFX.bulletImpact())
+  addButton(panel, 'Headshot', () => SFX.headshot())
+  addButton(panel, 'Reload', () => SFX.reload())
+  addButton(panel, 'Empty Click', () => SFX.emptyClick())
+  addButton(panel, 'Explosion', () => SFX.explosion())
+  addButton(panel, 'Pickup', () => SFX.pickup())
+  addButton(panel, 'Shell Casing', () => SFX.shellCasing())
+  addButton(panel, 'Bullet Time On', () => SFX.bulletTimeOn())
+  addButton(panel, 'Thunder', () => SFX.thunder())
+  addButton(panel, 'Enemy Death (grunt)', () => SFX.enemyDeath('grunt'))
+  addButton(panel, 'Enemy Death (thug)', () => SFX.enemyDeath('thug'))
+  addButton(panel, 'Wave Cleared', () => SFX.waveCleared())
 
   addSection(panel, 'MISC')
   addButton(panel, 'Reset Position', () => {

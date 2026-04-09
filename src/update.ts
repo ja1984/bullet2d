@@ -338,7 +338,7 @@ export function update(dt: number) {
   if (state.keys['KeyR'] && !player.reloading && state.magRounds[state.currentWeapon] < weapon.magSize && hasReserves) {
     player.reloading = true
     player.reloadTimer = weapon.reloadTime
-    SFX.reload()
+
     state.keys['KeyR'] = false
   }
 
@@ -353,6 +353,7 @@ export function update(dt: number) {
     if (state.magRounds[state.currentWeapon] <= 0) {
       // Auto reload when mag empty
       SFX.emptyClick()
+  
       player.reloading = true
       player.reloadTimer = weapon.reloadTime
       return
@@ -366,6 +367,7 @@ export function update(dt: number) {
       if (hasAmmoReserve) {
         player.reloading = true
         player.reloadTimer = weapon.reloadTime
+    
       } else {
         // Out of ammo — switch to pistol
         state.currentWeapon = 'pistol'
@@ -848,6 +850,7 @@ export function update(dt: number) {
   if (state.thunderTimer <= 0) {
     state.thunderFlash = 0.15
     state.screenShake = Math.max(state.screenShake, 4)
+    SFX.thunder()
     state.thunderTimer = 10 + Math.random() * 25
   }
 

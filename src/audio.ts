@@ -7,19 +7,6 @@ export function setAudioBulletTime(active: boolean) {
   bulletTimeActive = active
 }
 
-// Pause/resume all audio when tab visibility changes
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    audioCtx?.suspend()
-    bgMusic.pause()
-    ambientSiren.pause()
-  } else {
-    audioCtx?.resume()
-    if (ambientActive) {
-      bgMusic.play().catch(() => {})
-    }
-  }
-})
 
 export function updateMusicIntensity(enemiesAlive: number) {
   bgMusic.volume = enemiesAlive === 1 ? 0.2 : 0.08
@@ -52,6 +39,7 @@ preloadSound('headshot', 'sounds/fx/headshot.mp3')
 preloadSound('pickup', 'sounds/fx/pickup.mp3')
 preloadSound('grunt_death', 'sounds/enemies/grunt.mp3')
 preloadSound('thug_death', 'sounds/enemies/thug.mp3')
+preloadSound('thunder', 'sounds/environment/thunder.mp3')
 preloadSound('reload', 'sounds/weapons/reload.mp3')
 
 // Bullet time sound — preload as AudioBuffer for reverse playback
@@ -100,6 +88,20 @@ ambientSiren.volume = 0.025
 
 let ambientActive = false
 let ambientTimeout: ReturnType<typeof setTimeout> | null = null
+
+// Pause/resume all audio when tab visibility changes
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    audioCtx?.suspend()
+    bgMusic.pause()
+    ambientSiren.pause()
+  } else {
+    audioCtx?.resume()
+    if (ambientActive) {
+      bgMusic.play().catch(() => {})
+    }
+  }
+})
 
 function scheduleSiren() {
   if (!ambientActive) return
@@ -210,6 +212,9 @@ export const SFX = {
   },
   emptyClick() {
     playSound('empty', 0.5)
+  },
+  thunder() {
+    playSound('thunder', 0.1)
   },
   startAmbient() {
     if (!ambientActive) {
