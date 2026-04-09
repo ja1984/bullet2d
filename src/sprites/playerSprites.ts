@@ -1,51 +1,84 @@
 // ─── Player Sprite System ────────────────────────────────────────────────────
 
 import type { PlayerAnim, SpriteAnim } from '../types'
-import { SPRITE_FRAME_SIZE, DIVE_SPRITE_Y_OFFSET, spriteConfig } from '../constants'
+import type { PlayerSkin } from '../constants'
+import { SPRITE_FRAME_SIZE, DIVE_SPRITE_Y_OFFSET, PLAYER_SKINS, spriteConfig } from '../constants'
 import { state } from '../state'
 
-export const playerSprites: Record<PlayerAnim, SpriteAnim> = {} as any
+// Store sprites per skin
+const allSkinSprites: Record<PlayerSkin, Record<PlayerAnim, SpriteAnim>> = {} as any
+const skinArmSprites: Record<PlayerSkin, HTMLImageElement> = {} as any
+
+// Active sprites — these get swapped when skin changes
+export let playerSprites: Record<PlayerAnim, SpriteAnim> = {} as any
 
 export let spritesEnabled = false
 
 export function loadPlayerSprites() {
+  const skins = Object.entries(PLAYER_SKINS) as [PlayerSkin, typeof PLAYER_SKINS[PlayerSkin]][]
   let totalFrames = 0
   let loadedFrames = 0
 
-  for (const config of Object.values(spriteConfig)) {
-    totalFrames += config.frames
+  // Count total frames across all skins
+  for (const [, skinDef] of skins) {
+    for (const config of Object.values(skinDef.spriteConfig)) {
+      totalFrames += config.frames
+    }
   }
 
-  for (const [anim, config] of Object.entries(spriteConfig)) {
-    const animData: SpriteAnim = {
-      frames: [],
-      fps: config.fps,
-      loaded: false,
+  for (const [skinId, skinDef] of skins) {
+    const skinSprites: Record<string, SpriteAnim> = {}
+
+    for (const [anim, config] of Object.entries(skinDef.spriteConfig)) {
+      const animData: SpriteAnim = {
+        frames: [],
+        fps: config.fps,
+        loaded: false,
+      }
+
+      let animLoaded = 0
+      for (let i = 0; i < config.frames; i++) {
+        const img = new Image()
+        img.onload = () => {
+          animLoaded++
+          loadedFrames++
+          if (animLoaded === config.frames) {
+            animData.loaded = true
+          }
+          if (loadedFrames === totalFrames) {
+            spritesEnabled = true
+            console.log('All player sprites loaded!')
+          }
+        }
+        img.onerror = () => {
+          console.warn(`Sprite not found: ${skinDef.folder}/${anim}/${anim}_${i}.png`)
+        }
+        img.src = `${skinDef.folder}/${anim}/${anim}_${i}.png`
+        animData.frames.push(img)
+      }
+
+      skinSprites[anim] = animData
     }
 
-    let animLoaded = 0
-    for (let i = 0; i < config.frames; i++) {
-      const img = new Image()
-      img.onload = () => {
-        animLoaded++
-        loadedFrames++
-        if (animLoaded === config.frames) {
-          animData.loaded = true
-        }
-        if (loadedFrames === totalFrames) {
-          spritesEnabled = true
-          console.log('All player sprites loaded!')
-        }
-      }
-      img.onerror = () => {
-        console.warn(`Sprite not found: sprites/player/${anim}/${anim}_${i}.png`)
-      }
-      img.src = `sprites/player/${anim}/${anim}_${i}.png`
-      animData.frames.push(img)
-    }
+    allSkinSprites[skinId] = skinSprites as Record<PlayerAnim, SpriteAnim>
 
-    playerSprites[anim as PlayerAnim] = animData
+    // Load arm sprite
+    const armImg = new Image()
+    armImg.onload = () => console.log(`Arm sprite loaded for ${skinId}`)
+    armImg.onerror = () => console.warn(`Arm sprite not found: ${skinDef.folder}/arm/arm_0.png`)
+    armImg.src = `${skinDef.folder}/arm/arm_0.png`
+    skinArmSprites[skinId] = armImg
   }
+
+  // Set initial active skin
+  setSkin(state.playerSkin)
+}
+
+export function setSkin(skinId: PlayerSkin) {
+  state.playerSkin = skinId
+  playerSprites = allSkinSprites[skinId]
+  state.armSprite = skinArmSprites[skinId]
+  localStorage.setItem('bulletTime2d_skin', skinId)
 }
 
 export function getPlayerAnim(): PlayerAnim {
@@ -65,9 +98,15 @@ export function drawSprite(anim: SpriteAnim, x: number, y: number, flipX: boolea
   if (!anim.loaded) return false
   const ctx = state.ctx!
 
+  // Use active skin's sprite config for frame count
+  const skinConfig = PLAYER_SKINS[state.playerSkin].spriteConfig
+  const animName = getPlayerAnim()
+  const maxFrames = skinConfig[animName]?.frames ?? anim.frames.length
+
   const rawFrame = Math.floor(state.animTimer * anim.fps)
-  const frameIdx = forceFrame >= 0 ? forceFrame : (loop ? rawFrame % anim.frames.length : Math.min(rawFrame, anim.frames.length - 1))
+  const frameIdx = forceFrame >= 0 ? forceFrame : (loop ? rawFrame % maxFrames : Math.min(rawFrame, maxFrames - 1))
   const img = anim.frames[frameIdx]
+  if (!img) return false
   const drawW = SPRITE_FRAME_SIZE
   const drawH = SPRITE_FRAME_SIZE
 

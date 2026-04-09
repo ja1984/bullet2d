@@ -2,9 +2,12 @@
 
 import type { EnemyBehavior } from './types'
 import { LEVELS, PLAYER_MAX_HP, BULLET_TIME_MAX, WEAPONS, setLevel } from './constants'
+import type { PlayerSkin } from './constants'
+import { PLAYER_SKINS } from './constants'
 import { state } from './state'
 import { spawnEnemy, spawnCoverBoxes } from './systems/waves'
 import { SFX } from './audio'
+import { setSkin } from './sprites/playerSprites'
 
 let debugOpen = false
 
@@ -103,6 +106,11 @@ export function setupDebug() {
       }
     }
   })
+
+  addSection(panel, 'SKINS')
+  for (const [id, skin] of Object.entries(PLAYER_SKINS)) {
+    addButton(panel, skin.name, () => setSkin(id as PlayerSkin))
+  }
 
   addSection(panel, 'SOUNDS')
   addButton(panel, 'Pistol', () => SFX.pistolShot())

@@ -1,9 +1,11 @@
 // ─── Input ───────────────────────────────────────────────────────────────────
 
 import type { WeaponType } from './types'
-import { CANVAS_W, CANVAS_H } from './constants'
+import type { PlayerSkin } from './constants'
+import { CANVAS_W, CANVAS_H, PLAYER_SKINS } from './constants'
 import { state } from './state'
 import { SFX } from './audio'
+import { setSkin } from './sprites/playerSprites'
 
 export function getAvailableWeapons(): WeaponType[] {
   const all: WeaponType[] = ['pistol', 'shotgun', 'm16', 'sniper', 'grenades']
@@ -22,6 +24,15 @@ export function setupInput(canvas: HTMLCanvasElement) {
   window.addEventListener('keydown', (e) => {
     state.keys[e.code] = true
     if (e.code === 'Space' || e.code === 'Tab') { e.preventDefault(); e.stopPropagation() }
+    // Skin cycling on title screen
+    if (state.gameState === 'title' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
+      const skinIds = Object.keys(PLAYER_SKINS) as PlayerSkin[]
+      const idx = skinIds.indexOf(state.playerSkin)
+      const next = e.code === 'ArrowRight'
+        ? skinIds[(idx + 1) % skinIds.length]
+        : skinIds[(idx - 1 + skinIds.length) % skinIds.length]
+      setSkin(next)
+    }
     if (e.code === 'Escape' && state.gameState === 'playing') {
       state.gameState = 'paused'
     } else if (e.code === 'Escape' && state.gameState === 'paused') {

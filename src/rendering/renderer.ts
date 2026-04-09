@@ -1,24 +1,19 @@
 // ─── Renderer ────────────────────────────────────────────────────────────────
 
-import { CANVAS_W, CANVAS_H } from '../constants'
+import { CANVAS_W, CANVAS_H, PLAYER_SKINS } from '../constants'
+import type { PlayerSkin } from '../constants'
 import { state } from '../state'
 import { drawPlatforms, drawBloodDecals, drawCoverBoxes, drawSteamVents, drawPuddles, drawStreetlights, drawPigeons } from './drawLevel'
 import { drawEnemies, drawPlayer } from './drawEntities'
 import { drawBullets, drawParticles, drawShellCasings, drawHealthPickups, drawAmmoPickups, drawWeaponPickups, drawFloatingTexts, drawCrosshair, drawGrenades } from './drawEffects'
 import { drawHUD, drawOverlays } from './drawHUD'
+import { playerSprites } from '../sprites/playerSprites'
 
 let reflectionCanvas: HTMLCanvasElement | null = null
 
 const carImg = new Image()
 carImg.src = 'sprites/other/car.png'
 
-// Title screen idle animation
-const titleIdleFrames: HTMLImageElement[] = []
-for (let i = 0; i < 4; i++) {
-  const img = new Image()
-  img.src = `sprites/player/idle/idle_${i}.png`
-  titleIdleFrames.push(img)
-}
 
 
 export function render() {
@@ -347,7 +342,8 @@ export function renderTitleScreen() {
     ctx.drawImage(carImg, 160, groundY - carH + 4, carW, carH)
 
     // Player standing by the car
-    const idleFrame = titleIdleFrames[Math.floor(state.gameTime * 6) % titleIdleFrames.length]
+    const idleAnim = playerSprites?.idle
+    const idleFrame = idleAnim?.loaded ? idleAnim.frames[Math.floor(state.gameTime * 6) % idleAnim.frames.length] : null
     if (idleFrame?.complete && idleFrame.naturalWidth > 0) {
       const playerScale = 1
       const pw = 68 * playerScale
@@ -435,12 +431,19 @@ export function renderTitleScreen() {
   ctx.fillText('Double-tap A/D — Dive  |  Crouch + A/D — Roll', CANVAS_W / 2, controlsY + 36)
   ctx.fillText('1/2/3/4 or Scroll — Weapons  |  R — Reload', CANVAS_W / 2, controlsY + 54)
 
+  // Skin selector
+  const skinIds = Object.keys(PLAYER_SKINS) as PlayerSkin[]
+  const currentSkin = PLAYER_SKINS[state.playerSkin]
+  ctx.fillStyle = '#aaa'
+  ctx.font = '11px monospace'
+  ctx.fillText(`Skin: ${currentSkin.name}  [← →]`, CANVAS_W / 2, controlsY + 76)
+
   // Start prompt
   const pulse = 0.5 + Math.sin(state.gameTime * 3) * 0.5
   ctx.globalAlpha = 0.5 + pulse * 0.5
   ctx.fillStyle = '#fff'
   ctx.font = 'bold 18px monospace'
-  ctx.fillText('Click to Start', CANVAS_W / 2, controlsY + 80)
+  ctx.fillText('Click to Start', CANVAS_W / 2, controlsY + 100)
   ctx.globalAlpha = 1
   ctx.textAlign = 'left'
 }

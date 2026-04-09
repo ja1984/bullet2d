@@ -117,18 +117,50 @@ export const GRENADE_BOUNCE_DAMP = 0.5 // velocity kept after bounce
 
 // ─── Sprite Config ──────────────────────────────────────────────────────────
 
-export const spriteConfig: Record<PlayerAnim, { frames: number; fps: number }> = {
-  idle:   { frames: 4, fps: 6 },
-  run:    { frames: 8, fps: 14 },
-  jump:   { frames: 6, fps: 18 },
-  land:   { frames: 3, fps: 12 },
-  fall:   { frames: 9, fps: 12 },
-  dive:   { frames: 5, fps: 10 },
-  crouch:   { frames: 3, fps: 20 },
-  uncrouch: { frames: 2, fps: 15 },
-  roll:   { frames: 2, fps: 8 },
-  pickup: { frames: 5, fps: 10 },
+export type PlayerSkin = 'default' | 'pringlan'
+
+export interface SkinDef {
+  name: string
+  folder: string
+  spriteConfig: Record<PlayerAnim, { frames: number; fps: number }>
 }
+
+export const PLAYER_SKINS: Record<PlayerSkin, SkinDef> = {
+  default: {
+    name: 'Default',
+    folder: 'sprites/player',
+    spriteConfig: {
+      idle:   { frames: 4, fps: 6 },
+      run:    { frames: 8, fps: 14 },
+      jump:   { frames: 6, fps: 18 },
+      land:   { frames: 3, fps: 12 },
+      fall:   { frames: 9, fps: 12 },
+      dive:   { frames: 5, fps: 10 },
+      crouch:   { frames: 3, fps: 20 },
+      uncrouch: { frames: 2, fps: 15 },
+      roll:   { frames: 2, fps: 8 },
+      pickup: { frames: 5, fps: 10 },
+    },
+  },
+  pringlan: {
+    name: 'Pringlan',
+    folder: 'sprites/pringlan',
+    spriteConfig: {
+      idle:   { frames: 4, fps: 6 },
+      run:    { frames: 8, fps: 14 },
+      jump:   { frames: 8, fps: 18 },
+      land:   { frames: 3, fps: 12 },
+      fall:   { frames: 9, fps: 12 },
+      dive:   { frames: 5, fps: 10 },
+      crouch:   { frames: 3, fps: 20 },
+      uncrouch: { frames: 2, fps: 15 },
+      roll:   { frames: 2, fps: 8 },
+      pickup: { frames: 5, fps: 10 },
+    },
+  },
+}
+
+export const spriteConfig: Record<PlayerAnim, { frames: number; fps: number }> = PLAYER_SKINS.default.spriteConfig
 
 // ─── Enemy Configs ──────────────────────────────────────────────────────────
 

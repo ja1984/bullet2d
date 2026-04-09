@@ -271,8 +271,8 @@ export function update(dt: number) {
   resolvePhysics(player, gameDt)
 
   // Clamp player inside level bounds
-  if (player.x < 20) { player.x = 20; player.vx = 0 }
-  if (player.x + player.w > 2380) { player.x = 2380 - player.w; player.vx = 0 }
+  if (player.x < 20) player.x = 20
+  if (player.x + player.w > 2380) player.x = 2380 - player.w
 
   // Fall death — below ground level
   if (player.y > 800) {

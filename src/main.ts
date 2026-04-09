@@ -40,11 +40,6 @@ loadEnemySprites('thug', {
 })
 loadWeaponSprites()
 
-// Load arm sprite
-const armImg = new Image()
-armImg.onload = () => { state.armSprite = armImg; console.log('Arm sprite loaded') }
-armImg.onerror = () => console.warn('Arm sprite not found: sprites/player/arm/arm_0.png')
-armImg.src = 'sprites/player/arm/arm_0.png'
 const initLevel = generateLevel(1)
 setGeneratedLevel(initLevel.platforms, initLevel.spawnPositions)
 populateLevel(initLevel.platforms, 1)

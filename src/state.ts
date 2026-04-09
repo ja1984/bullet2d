@@ -23,6 +23,7 @@ import type {
   WeaponType,
 } from './types'
 import { BULLET_TIME_MAX, PLAYER_MAX_HP, WEAPONS } from './constants'
+import type { PlayerSkin } from './constants'
 
 export const state = {
   // Canvas context (set in main.ts)
@@ -194,6 +195,9 @@ export const state = {
   // Thunder
   thunderTimer: 10 + Math.random() * 20,
   thunderFlash: 0,
+
+  // Player skin
+  playerSkin: (localStorage.getItem('bulletTime2d_skin') || 'default') as PlayerSkin,
 
   // Reinforcements
   reinforcementsSent: false,
