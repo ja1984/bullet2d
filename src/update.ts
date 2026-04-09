@@ -8,7 +8,7 @@ import {
   WALL_SLIDE_SPEED, WALL_JUMP_FORCE_X, WALL_JUMP_FORCE_Y,
   GRENADE_FUSE, GRENADE_RADIUS, GRENADE_BOUNCE_DAMP,
 } from './constants'
-import { state, saveScore } from './state'
+import { state, saveScore, checkAllPlayersDead } from './state'
 import { SFX, setAudioBulletTime, playSound, updateMusicIntensity } from './audio'
 import { getPlayerAnim } from './sprites/playerSprites'
 import { weaponSprites } from './sprites/weaponSprites'
@@ -20,12 +20,20 @@ import { startWave, getDifficultyMult, spawnEnemy } from './systems/waves'
 import { updateAmbient, spawnAmbientObjects } from './systems/ambient'
 import type { EnemyBehavior } from './types'
 import { updateCamera } from './systems/camera'
+import { sendPlayerState, updateRemotePlayer, syncGameEvents, isOnline, isHost, queueBulletSync } from './systems/network'
 import { restart } from './main'
 
 export function update(dt: number) {
   state.gameTime += dt
 
   if (state.gameOver) {
+    // In co-op, keep the game running so the other player can continue
+    if (state.coopEnabled) {
+      // Still sync network state
+      sendPlayerState()
+      updateRemotePlayer(dt)
+      syncGameEvents()
+    }
     if (state.deathSlowMo) {
       state.deathSlowMoTimer -= dt
       if (state.deathSlowMoTimer <= 0) state.deathSlowMo = false
@@ -38,7 +46,7 @@ export function update(dt: number) {
       }
     }
     if (state.keys['KeyR']) { restart(); SFX.startAmbient() }
-    return
+    if (!state.coopEnabled) return
   }
 
   // Hit pause — freeze the game for a few frames on kill
@@ -277,11 +285,8 @@ export function update(dt: number) {
   // Fall death — below ground level
   if (player.y > 800) {
     player.hp = 0
-    state.gameOver = true
-    state.deathSlowMo = true
-    state.deathSlowMoTimer = 2.0
-    SFX.stopAmbient()
-    saveScore()
+    state.animTimer = 0
+    checkAllPlayersDead()
   }
 
   // ── Weapon Pickups ──
@@ -398,16 +403,18 @@ export function update(dt: number) {
       const bx = cx + Math.cos(baseAngle) * gunDist
       const by = cy + Math.sin(baseAngle) * gunDist
 
-      state.bullets.push({
+      const bullet = {
         x: bx, y: by,
         vx: Math.cos(spreadAngle) * weapon.bulletSpeed,
         vy: Math.sin(spreadAngle) * weapon.bulletSpeed,
-        owner: 'player',
+        owner: 'player' as const,
         life: BULLET_LIFE,
-        trail: [],
+        trail: [] as { x: number; y: number }[],
         damage: weapon.damage,
         penetrate: state.currentWeapon === 'sniper',
-      })
+      }
+      state.bullets.push(bullet)
+      queueBulletSync(bullet)
     }
     spawnMuzzleFlash(cx + Math.cos(baseAngle) * gunDist, cy + Math.sin(baseAngle) * gunDist, baseAngle)
     // Shell casing
@@ -434,15 +441,19 @@ export function update(dt: number) {
   }
 
   // ── Enemies ──
+  const guestOnline = isOnline() && !isHost()
   for (const e of state.enemies) {
     e.animTimer += gameDt
     if (e.hitTimer > 0) e.hitTimer -= gameDt
 
     if (e.state === 'dead') {
       e.deathTimer -= gameDt
-      resolvePhysics(e, gameDt)
+      if (!guestOnline) resolvePhysics(e, gameDt)
       continue
     }
+
+    // Guest: skip AI, positions come from host via enemy_sync
+    if (guestOnline) continue
 
     // Kill enemy if fallen out of map
     if (e.y > 800) {
@@ -455,12 +466,33 @@ export function update(dt: number) {
     const cfg = ENEMY_CONFIGS[e.behavior]
     if (e.showHpTimer > 0) e.showHpTimer -= gameDt
 
-    // Check if player is in sight
-    const dx = player.x - e.x
-    const dy = player.y - e.y
+    // Find closest alive player to target
+    let targetX = player.x, targetY = player.y, targetW = player.w, targetH = player.h
+    let hasTarget = player.hp > 0
+    if (state.coopEnabled && state.players.length >= 2) {
+      const p2 = state.players[1]
+      if (player.hp <= 0 && p2.hp > 0) {
+        targetX = p2.x; targetY = p2.y; targetW = p2.w; targetH = p2.h
+        hasTarget = true
+      } else if (player.hp > 0 && p2.hp > 0) {
+        // Both alive — pick closest
+        const d1 = Math.abs(player.x - e.x) + Math.abs(player.y - e.y)
+        const d2 = Math.abs(p2.x - e.x) + Math.abs(p2.y - e.y)
+        if (d2 < d1) {
+          targetX = p2.x; targetY = p2.y; targetW = p2.w; targetH = p2.h
+        }
+      }
+    }
+
+    // Check if target is in sight
+    const dx = targetX - e.x
+    const dy = targetY - e.y
     const dist = Math.sqrt(dx * dx + dy * dy)
 
-    if (dist < cfg.sightRange) {
+    if (!hasTarget) {
+      // No alive players — go idle
+      if (e.state === 'alert') { e.alertTimer -= gameDt; if (e.alertTimer <= 0) e.state = 'idle' }
+    } else if (dist < cfg.sightRange) {
       e.state = 'alert'
       e.alertTimer = 3
       e.facing = dx > 0 ? 1 : -1
@@ -486,10 +518,10 @@ export function update(dt: number) {
     } else if (e.state === 'alert') {
       // Behavior-specific alert logic
       if (e.behavior === 'drone') {
-        // Fly toward player but stay above
+        // Fly toward target but stay above
         e.vx = (dx > 0 ? 1 : -1) * cfg.speed
-        const targetY = player.y - 80
-        e.vy = (targetY - e.y) * 2
+        const droneTargetY = targetY - 80
+        e.vy = (droneTargetY - e.y) * 2
       } else if (e.behavior === 'rusher') {
         e.vx = (dx > 0 ? 1 : -1) * cfg.speed
       } else if (e.behavior === 'sniper') {
@@ -512,23 +544,25 @@ export function update(dt: number) {
       if (e.shootTimer <= 0) {
         e.shootTimer = (cfg.shootInterval / getDifficultyMult()) * (0.8 + Math.random() * 0.4)
         const angle = Math.atan2(
-          (player.y + player.h / 2) - (e.y + e.h / 2),
-          (player.x + player.w / 2) - (e.x + e.w / 2)
+          (targetY + targetH / 2) - (e.y + e.h / 2),
+          (targetX + targetW / 2) - (e.x + e.w / 2)
         )
         // Fire pellets (shotgunner fires spread)
         for (let p = 0; p < cfg.pellets; p++) {
           const spreadAngle = angle + (Math.random() - 0.5) * cfg.spread * 2
           const bx = e.x + e.w / 2 + Math.cos(angle) * 16
           const by = e.y + e.h / 2 - 4 + Math.sin(angle) * 16
-          state.bullets.push({
+          const eBullet = {
             x: bx, y: by,
             vx: Math.cos(spreadAngle) * cfg.bulletSpeed,
             vy: Math.sin(spreadAngle) * cfg.bulletSpeed,
-            owner: 'enemy',
+            owner: 'enemy' as const,
             life: BULLET_LIFE,
-            trail: [],
+            trail: [] as { x: number; y: number }[],
             damage: cfg.damage,
-          })
+          }
+          state.bullets.push(eBullet)
+          queueBulletSync(eBullet)
         }
         const bx = e.x + e.w / 2 + Math.cos(angle) * 16
         const by = e.y + e.h / 2 - 4 + Math.sin(angle) * 16
@@ -953,4 +987,9 @@ export function update(dt: number) {
       state.waveTimer = 3
     }
   }
+
+  // ─── Multiplayer sync ───────────────────────────────────────────────────────
+  sendPlayerState()
+  updateRemotePlayer(dt)
+  syncGameEvents()
 }

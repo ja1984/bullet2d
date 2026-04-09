@@ -83,6 +83,7 @@ export function setSkin(skinId: PlayerSkin) {
 
 export function getPlayerAnim(): PlayerAnim {
   const player = state.player
+  if (player.hp <= 0) return 'death'
   if (player.rolling) return 'roll'
   if (player.diving) return 'run'
   if (player.doubleJumping) return 'roll'

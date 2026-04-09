@@ -2,8 +2,9 @@
 
 import type { CoverBox, EnemyBehavior } from '../types'
 import { ENEMY_CONFIGS, LEVELS, platforms, spawnPositions, setLevel, setGeneratedLevel } from '../constants'
-import { state } from '../state'
+import { state, respawnPlayer } from '../state'
 import { generateLevel, populateLevel } from './levelgen'
+import { isHost, isOnline, sendWaveLevel } from './network'
 
 // Difficulty multiplier — enemies get tougher each wave
 export function getDifficultyMult(): number {
@@ -62,7 +63,52 @@ export function getWaveEnemies(waveNum: number): { behavior: EnemyBehavior; coun
 
 export function startWave() {
   state.wave++
-  // Generate a fresh level each wave
+
+  // Respawn dead player at wave start in co-op
+  if (state.coopEnabled && state.player.hp <= 0) {
+    respawnPlayer()
+  }
+
+  // In online mode, only the host generates the level and syncs it to the guest.
+  // The guest waits for the host's wave_level message.
+  if (isOnline() && !isHost()) {
+    state.waveState = 'active'
+    return
+  }
+
+  // Wave 1: map was already generated at init, just spawn enemies
+  if (state.wave === 1) {
+    spawnWaveEnemies()
+    if (isOnline() && isHost()) sendWaveLevel(state.wave)
+    return
+  }
+
+  applyWaveLevel()
+
+  // Send level data to guest
+  if (isOnline() && isHost()) {
+    sendWaveLevel(state.wave)
+  }
+}
+
+function spawnWaveEnemies() {
+  state.waveState = 'active'
+  state.invincibleTimer = 1.0
+  state.reinforcementsSent = false
+  const waveEnemies = getWaveEnemies(state.wave)
+  let spawnIdx = 0
+  for (const group of waveEnemies) {
+    for (let i = 0; i < group.count; i++) {
+      const pos = spawnPositions[spawnIdx % spawnPositions.length]
+      spawnEnemy(pos.x, pos.y, group.behavior)
+      spawnIdx++
+    }
+  }
+  state.waveEnemiesAlive = state.enemies.filter(e => e.state !== 'dead').length
+}
+
+// Shared logic for applying level + spawning enemies for the current wave
+export function applyWaveLevel() {
   const level = generateLevel(state.wave)
   setGeneratedLevel(level.platforms, level.spawnPositions)
   populateLevel(level.platforms, state.wave)

@@ -201,6 +201,105 @@ export const state = {
 
   // Reinforcements
   reinforcementsSent: false,
+
+  // Multiplayer
+  coopEnabled: false,
+  players: [] as any[],
+}
+
+export type PlayerState = ReturnType<typeof createPlayerState>
+
+export function createPlayerState(index: number, x = 150, y = 500) {
+  return {
+    x, y,
+    w: 24, h: 44,
+    vx: 0, vy: 0,
+    onGround: false,
+    facing: 1,
+    hp: PLAYER_MAX_HP,
+    jumpCount: 0,
+    doubleJumping: false,
+    doubleJumpSpin: 0,
+    landingTimer: 0,
+    wasAirborne: false,
+    jumpHoldTime: 0,
+    jumpMaxHold: 0.2,
+    jumpWasReleased: true,
+    crouching: false,
+    uncrouchTimer: 0,
+    standingH: 44,
+    crouchH: 28,
+    rolling: false,
+    rollTimer: 0,
+    rollDir: 0,
+    wallSliding: false,
+    wallDir: 0,
+    wallJumpCooldown: 0,
+    diving: false,
+    diveTimer: 0,
+    diveDir: 0,
+    shootCooldown: 0,
+    reloading: false,
+    reloadTimer: 0,
+    bulletTimeActive: false,
+    bulletTimeEnergy: BULLET_TIME_MAX,
+    hitFlash: 0,
+    pickupTimer: 0,
+    // Remote-only animation state
+    currentAnim: 'idle' as PlayerAnim,
+    animTimer: 0,
+    currentWeapon: 'pistol' as WeaponType,
+    aimAngle: 0,
+    playerIndex: index,
+  }
+}
+
+export function checkAllPlayersDead() {
+  if (state.gameOver) return
+  if (state.coopEnabled) {
+    // In co-op, only game over if ALL players are dead
+    const allDead = state.player.hp <= 0 &&
+      (state.players.length < 2 || state.players[1].hp <= 0)
+    if (!allDead) return
+  }
+  state.gameOver = true
+  state.deathSlowMo = true
+  state.deathSlowMoTimer = 2.0
+}
+
+export function respawnPlayer() {
+  const player = state.player
+  player.x = 100; player.y = 500
+  player.vx = 0; player.vy = 0
+  player.hp = PLAYER_MAX_HP
+  player.diving = false; player.diveTimer = 0
+  player.crouching = false; player.rolling = false; player.rollTimer = 0
+  player.h = player.standingH
+  player.jumpCount = 0
+  player.doubleJumping = false; player.doubleJumpSpin = 0
+  player.jumpHoldTime = 0; player.jumpWasReleased = true
+  player.landingTimer = 0; player.wasAirborne = false
+  player.wallSliding = false; player.wallDir = 0; player.wallJumpCooldown = 0
+  player.bulletTimeEnergy = BULLET_TIME_MAX
+  player.bulletTimeActive = false
+  player.hitFlash = 0; player.pickupTimer = 0
+  player.reloading = false; player.reloadTimer = 0
+  player.shootCooldown = 0
+  state.currentWeapon = 'pistol'
+  state.playerAmmo.pistol = -1
+  state.playerAmmo.shotgun = 0
+  state.playerAmmo.m16 = 0
+  state.playerAmmo.sniper = 0
+  state.playerAmmo.grenades = 3
+  state.magRounds.pistol = WEAPONS.pistol.magSize
+  state.magRounds.shotgun = WEAPONS.shotgun.magSize
+  state.magRounds.m16 = WEAPONS.m16.magSize
+  state.magRounds.sniper = WEAPONS.sniper.magSize
+  state.magRounds.grenades = WEAPONS.grenades.magSize
+  state.gameOver = false
+  state.deathSlowMo = false
+  state.deathSlowMoTimer = 0
+  state.bulletTimeToggled = false
 }
 
 export function saveScore() {

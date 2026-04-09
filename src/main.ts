@@ -12,6 +12,7 @@ import { generateLevel, populateLevel } from './systems/levelgen'
 import { setGeneratedLevel } from './constants'
 import { update } from './update'
 import { render, renderTitleScreen } from './rendering/renderer'
+import { createMultiplayerMenu, showMultiplayerMenu, hideMultiplayerMenu } from './ui/multiplayerMenu'
 
 // ─── Canvas Setup ────────────────────────────────────────────────────────────
 
@@ -39,6 +40,11 @@ loadEnemySprites('thug', {
   death: { frames: 10, fps: 16 },
 })
 loadWeaponSprites()
+
+// Init multiplayer menu
+createMultiplayerMenu()
+// Players array: index 0 is always the local player
+state.players = [state.player]
 
 const initLevel = generateLevel(1)
 setGeneratedLevel(initLevel.platforms, initLevel.spawnPositions)
@@ -130,9 +136,12 @@ function gameLoop(timestamp: number) {
   if (state.gameState === 'title') {
     state.gameTime += dt
     renderTitleScreen()
+    showMultiplayerMenu()
   } else if (state.gameState === 'paused') {
+    hideMultiplayerMenu()
     render() // still render the game behind the pause overlay
   } else {
+    hideMultiplayerMenu()
     update(dt)
     render()
   }

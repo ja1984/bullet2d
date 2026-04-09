@@ -2,7 +2,7 @@
 
 import type { WeaponType } from '../types'
 import { COMBO_WINDOW, GRENADE_RADIUS, WEAPONS, platforms } from '../constants'
-import { state, saveScore } from '../state'
+import { state, saveScore, checkAllPlayersDead } from '../state'
 import { SFX } from '../audio'
 import { spawnParticles, spawnExplosionLight } from './particles'
 import { enemyTypes } from '../sprites/enemySprites'
@@ -294,12 +294,9 @@ export function updateBullets(gameDt: number) {
         state.screenShake = 6
         bullets.splice(i, 1)
         if (player.hp <= 0) {
-          state.gameOver = true
-          state.deathSlowMo = true
-          state.deathSlowMoTimer = 2.0
-          SFX.stopAmbient()
+          state.animTimer = 0 // reset so death anim plays from start
           spawnParticles(player.x + player.w / 2, player.y + player.h / 2, 30, '#f44', 300)
-          saveScore()
+          checkAllPlayersDead()
         }
       }
     }

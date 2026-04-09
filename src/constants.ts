@@ -140,6 +140,7 @@ export const PLAYER_SKINS: Record<PlayerSkin, SkinDef> = {
       uncrouch: { frames: 2, fps: 15 },
       roll:   { frames: 2, fps: 8 },
       pickup: { frames: 5, fps: 10 },
+      death:  { frames: 11, fps: 12 },
     },
   },
   pringlan: {
@@ -156,6 +157,7 @@ export const PLAYER_SKINS: Record<PlayerSkin, SkinDef> = {
       uncrouch: { frames: 2, fps: 15 },
       roll:   { frames: 2, fps: 8 },
       pickup: { frames: 5, fps: 10 },
+      death:  { frames: 11, fps: 12 },
     },
   },
 }

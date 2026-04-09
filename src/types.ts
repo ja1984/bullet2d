@@ -209,7 +209,7 @@ export interface WeaponPickup {
   collected: boolean
 }
 
-export type PlayerAnim = 'idle' | 'run' | 'jump' | 'fall' | 'dive' | 'crouch' | 'uncrouch' | 'roll' | 'pickup' | 'land'
+export type PlayerAnim = 'idle' | 'run' | 'jump' | 'fall' | 'dive' | 'crouch' | 'uncrouch' | 'roll' | 'pickup' | 'land' | 'death'
 
 export interface SpriteAnim {
   frames: HTMLImageElement[]

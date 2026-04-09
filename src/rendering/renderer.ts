@@ -4,7 +4,7 @@ import { CANVAS_W, CANVAS_H, PLAYER_SKINS } from '../constants'
 import type { PlayerSkin } from '../constants'
 import { state } from '../state'
 import { drawPlatforms, drawBloodDecals, drawCoverBoxes, drawSteamVents, drawPuddles, drawStreetlights, drawPigeons } from './drawLevel'
-import { drawEnemies, drawPlayer } from './drawEntities'
+import { drawEnemies, drawPlayer, drawRemotePlayer } from './drawEntities'
 import { drawBullets, drawParticles, drawShellCasings, drawHealthPickups, drawAmmoPickups, drawWeaponPickups, drawFloatingTexts, drawCrosshair, drawGrenades } from './drawEffects'
 import { drawHUD, drawOverlays } from './drawHUD'
 import { playerSprites } from '../sprites/playerSprites'
@@ -184,6 +184,7 @@ export function render() {
   rCtx.translate(0, -groundY + 8)
   drawEnemies()
   drawPlayer()
+  drawRemotePlayer()
   rCtx.restore()
   state.ctx = origCtx
   // Draw the offscreen canvas into the world (we're already in camera-transformed space)
@@ -198,6 +199,7 @@ export function render() {
   drawGrenades()
   drawEnemies()
   drawPlayer()
+  drawRemotePlayer()
   drawParticles()
   drawShellCasings()
   drawHealthPickups()

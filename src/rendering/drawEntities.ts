@@ -202,7 +202,7 @@ export function drawPlayer() {
     } else if (player.doubleJumping) {
       rotation = player.doubleJumpSpin
     }
-    const shouldLoop = playerAnim !== 'fall' && playerAnim !== 'jump' && playerAnim !== 'pickup' && playerAnim !== 'dive' && playerAnim !== 'crouch' && playerAnim !== 'uncrouch' && playerAnim !== 'land'
+    const shouldLoop = playerAnim !== 'fall' && playerAnim !== 'jump' && playerAnim !== 'pickup' && playerAnim !== 'dive' && playerAnim !== 'crouch' && playerAnim !== 'uncrouch' && playerAnim !== 'land' && playerAnim !== 'death'
     const anchorBottom = playerAnim === 'dive'
     const crouchOffset = (playerAnim === 'crouch' || playerAnim === 'uncrouch') ? -8 : 0
     const doubleJumpFrame = player.doubleJumping ? spriteConfig.roll.frames - 1 : -1
@@ -253,6 +253,9 @@ export function drawPlayer() {
       ctx.fillRect(px + 14, py + 34, 5, 10)
     }
   }
+
+  // Hide arm/weapon when dead
+  if (player.hp <= 0) { ctx.globalAlpha = 1; return }
 
   // Gun arm — arm sprite + weapon, rotating toward mouse
   const aimWorldX = mouse.x + camera.x
@@ -417,5 +420,103 @@ export function drawPlayer() {
     ctx.fillStyle = `rgb(${Math.floor(255 * chargePower)}, ${Math.floor(200 * (1 - chargePower))}, 50)`
     ctx.fillRect(cx - 15, cy - 20, 30 * chargePower, 4)
   }
+  ctx.globalAlpha = 1
+}
+
+// ─── Draw Remote Player (P2) ────────────────────────────────────────────────
+
+export function drawRemotePlayer() {
+  if (!state.coopEnabled || state.players.length < 2) return
+  const ctx = state.ctx!
+  const p2 = state.players[1]
+  const px = p2.x, py = p2.y
+
+  // Slight transparency to distinguish from local player
+  ctx.globalAlpha = 0.85
+
+  // Rolling afterimage
+  if (p2.rolling) {
+    ctx.globalAlpha = 0.15
+    ctx.fillStyle = '#ff6688'
+    ctx.fillRect(px - p2.vx * 0.03, py - p2.vy * 0.03, p2.w, p2.h)
+    ctx.globalAlpha = 0.85
+  }
+
+  // Try sprite rendering
+  const anim = (p2.currentAnim || 'idle') as import('../types').PlayerAnim
+  const sheet = playerSprites[anim]
+  const flipX = p2.facing < 0
+  let spriteDrawn = false
+
+  if (sheet?.loaded) {
+    let rotation = 0
+    if (p2.rolling) {
+      rotation = p2.rollDir * (1 - p2.rollTimer / 0.4) * Math.PI * 2
+    } else if (p2.doubleJumping) {
+      rotation = p2.doubleJumpSpin
+    }
+    const shouldLoop = anim !== 'fall' && anim !== 'jump' && anim !== 'pickup' && anim !== 'dive' && anim !== 'crouch' && anim !== 'uncrouch' && anim !== 'land'
+    const anchorBottom = anim === 'dive'
+    const crouchOffset = (anim === 'crouch' || anim === 'uncrouch') ? -8 : 0
+    spriteDrawn = drawSprite(sheet, px, py + crouchOffset, flipX, rotation, shouldLoop, anchorBottom, -1)
+  }
+
+  // Fallback rectangle
+  if (!spriteDrawn) {
+    ctx.fillStyle = p2.diving || p2.rolling ? '#cc4466' : '#aa3355'
+    if (p2.crouching) {
+      ctx.fillRect(px + 2, py + 6, 20, 14)
+      ctx.fillStyle = '#ddccbb'
+      ctx.fillRect(px + 6, py - 2, 12, 10)
+    } else {
+      ctx.fillRect(px + 4, py + 12, 16, 22)
+      ctx.fillStyle = '#ddccbb'
+      ctx.fillRect(px + 6, py, 12, 14)
+    }
+  }
+
+  // Hide arm/weapon when dead
+  if (p2.hp <= 0) { ctx.globalAlpha = 1; return }
+
+  // Gun arm
+  const aimAngle = p2.aimAngle || 0
+  const spriteCenterX = px + p2.w / 2
+  const spriteCenterY = py + p2.h / 2
+  const shoulderX = spriteCenterX + (p2.facing > 0 ? ARM_ANCHOR_X : -ARM_ANCHOR_X)
+  const shoulderY = spriteCenterY + ARM_ANCHOR_Y
+  const flipGun = Math.abs(aimAngle) > Math.PI / 2
+
+  ctx.save()
+  ctx.translate(shoulderX, shoulderY)
+  ctx.rotate(aimAngle - Math.PI / 2)
+  if (flipGun) ctx.scale(-1, 1)
+  ctx.imageSmoothingEnabled = false
+
+  const armImg = state.armSprite
+  if (armImg) {
+    ctx.drawImage(armImg, -ARM_PIVOT_X, -ARM_PIVOT_Y, 68, 68)
+  }
+
+  const ws = weaponSprites[(p2.currentWeapon || 'pistol') as import('../types').WeaponType]
+  const handOffX = ARM_HAND_X - ARM_PIVOT_X
+  const handOffY = ARM_HAND_Y - ARM_PIVOT_Y
+  if (ws?.loaded) {
+    const targetH = 12
+    const scale = targetH / ws.h
+    ctx.save()
+    ctx.translate(handOffX, handOffY)
+    ctx.rotate(Math.PI / 2)
+    ctx.drawImage(ws.image, 0, -ws.h * scale / 2, ws.w * scale, ws.h * scale)
+    ctx.restore()
+  }
+  ctx.restore()
+
+  // P2 nametag
+  ctx.globalAlpha = 0.7
+  ctx.fillStyle = '#ffcc44'
+  ctx.font = 'bold 10px Audiowide, monospace'
+  ctx.textAlign = 'center'
+  ctx.fillText('P2', px + p2.w / 2, py - 8)
+
   ctx.globalAlpha = 1
 }
