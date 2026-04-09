@@ -37,7 +37,7 @@ export function update(dt: number) {
         if (p.life <= 0) state.particles.splice(i, 1)
       }
     }
-    if (state.keys['KeyR']) restart()
+    if (state.keys['KeyR']) { restart(); SFX.startAmbient() }
     return
   }
 
@@ -274,6 +274,7 @@ export function update(dt: number) {
     state.gameOver = true
     state.deathSlowMo = true
     state.deathSlowMoTimer = 2.0
+    SFX.stopAmbient()
     saveScore()
   }
 
@@ -337,10 +338,15 @@ export function update(dt: number) {
 
   const canShoot = weapon.auto ? state.mouseDown : state.mouseClicked
   state.mouseClicked = false
+  if (canShoot && player.shootCooldown <= 0 && player.reloading) {
+    SFX.emptyClick()
+    player.shootCooldown = 0.2 // prevent spam
+  }
   if (canShoot && player.shootCooldown <= 0 && !player.reloading) {
     // Check mag
     if (state.magRounds[state.currentWeapon] <= 0) {
       // Auto reload when mag empty
+      SFX.emptyClick()
       player.reloading = true
       player.reloadTimer = weapon.reloadTime
       return
@@ -354,10 +360,10 @@ export function update(dt: number) {
       if (hasAmmoReserve) {
         player.reloading = true
         player.reloadTimer = weapon.reloadTime
-        SFX.reload()
       } else {
         // Out of ammo — switch to pistol
         state.currentWeapon = 'pistol'
+        player.shootCooldown = 0.3
       }
     }
 
@@ -614,7 +620,7 @@ export function update(dt: number) {
           if (e.hp <= 0) {
             e.state = 'dead'
             state.hitPauseTimer = 0.07
-            SFX.enemyDeath()
+            SFX.enemyDeath(e.type)
             e.deathTimer = 3
             state.killCount++
             state.killFeed.push({ text: 'EXPLOSION!', color: '#ff6622', life: 2, maxLife: 2 })
@@ -776,7 +782,7 @@ export function update(dt: number) {
           e.showHpTimer = 2
           if (e.hp <= 0) {
             e.state = 'dead'
-            SFX.enemyDeath()
+            SFX.enemyDeath(e.type)
             e.deathTimer = 3
             state.killCount++
           }

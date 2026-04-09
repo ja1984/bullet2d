@@ -2,6 +2,39 @@
 
 let audioCtx: AudioContext | null = null
 
+// Preloaded MP3 sounds
+const soundCache: Record<string, HTMLAudioElement> = {}
+
+function preloadSound(name: string, path: string) {
+  const audio = new Audio(path)
+  audio.preload = 'auto'
+  soundCache[name] = audio
+}
+
+function playSound(name: string, volume = 1) {
+  const cached = soundCache[name]
+  if (!cached) return
+  const sound = cached.cloneNode() as HTMLAudioElement
+  sound.volume = volume
+  sound.play().catch(() => {})
+}
+
+preloadSound('empty', 'sounds/weapons/empty.mp3')
+preloadSound('pistol', 'sounds/weapons/pistol.mp3')
+preloadSound('m16', 'sounds/weapons/m16.mp3')
+preloadSound('sniper', 'sounds/weapons/sniper.mp3')
+preloadSound('shotgun', 'sounds/weapons/shotgun.mp3')
+preloadSound('hit', 'sounds/weapons/hit.mp3')
+preloadSound('grunt_death', 'sounds/enemies/grunt.mp3')
+preloadSound('thug_death', 'sounds/enemies/thug.mp3')
+
+// Ambient loops
+const ambientSiren = new Audio('sounds/environment/siren.mp3')
+ambientSiren.loop = true
+ambientSiren.volume = 0.010
+
+let ambientPlaying = false
+
 function getAudio(): AudioContext {
   if (!audioCtx) audioCtx = new AudioContext()
   if (audioCtx.state === 'suspended') audioCtx.resume()
@@ -42,26 +75,19 @@ function playTone(freq: number, duration: number, volume: number, type: Oscillat
 
 export const SFX = {
   pistolShot() {
-    playNoise(0.08, 0.3, 3000)
-    playTone(800, 0.05, 0.15, 'square')
+    playSound('pistol', 0.2)
   },
   shotgunShot() {
-    playNoise(0.15, 0.5, 2000)
-    playTone(200, 0.1, 0.2, 'sawtooth')
-    playTone(120, 0.12, 0.15, 'square')
+    playSound('shotgun', 0.4)
   },
   m16Shot() {
-    playNoise(0.05, 0.25, 4000)
-    playTone(1200, 0.03, 0.1, 'square')
+    playSound('m16', 0.35)
   },
   sniperShot() {
-    playNoise(0.2, 0.6, 1500)
-    playTone(150, 0.15, 0.3, 'sawtooth')
-    playTone(80, 0.2, 0.2, 'square')
+    playSound('sniper', 0.5)
   },
   bulletImpact() {
-    playNoise(0.04, 0.15, 2500)
-    playTone(400, 0.03, 0.08, 'square')
+    playSound('hit', 0.3)
   },
   headshot() {
     playNoise(0.06, 0.3, 3500)
@@ -104,14 +130,12 @@ export const SFX = {
     osc.start()
     osc.stop(ctx.currentTime + 0.25)
   },
-  enemyDeath() {
-    playNoise(0.1, 0.2, 1500)
-    playTone(300, 0.08, 0.12, 'sawtooth')
-    playTone(150, 0.12, 0.1, 'square')
+  enemyDeath(type?: string) {
+    if (type === 'thug') playSound('thug_death', 0.4)
+    else playSound('grunt_death', 0.4)
   },
   playerHit() {
-    playNoise(0.08, 0.3, 1800)
-    playTone(200, 0.1, 0.2, 'square')
+    playSound('hit', 0.3)
   },
   waveCleared() {
     const ctx = getAudio()
@@ -131,10 +155,24 @@ export const SFX = {
     playTone(40, 0.25, 0.2, 'square')
   },
   shellCasing() {
-    playTone(4000 + Math.random() * 2000, 0.015, 0.04, 'sine')
+    setTimeout(() => playTone(4000 + Math.random() * 2000, 0.015, 0.04, 'sine'), 200)
   },
   pickup() {
     playTone(800, 0.08, 0.12, 'sine')
     setTimeout(() => playTone(1200, 0.08, 0.1, 'sine'), 60)
+  },
+  emptyClick() {
+    playSound('empty', 0.5)
+  },
+  startAmbient() {
+    if (!ambientPlaying) {
+      ambientSiren.play().catch(() => {})
+      ambientPlaying = true
+    }
+  },
+  stopAmbient() {
+    ambientSiren.pause()
+    ambientSiren.currentTime = 0
+    ambientPlaying = false
   },
 }

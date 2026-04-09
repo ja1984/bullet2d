@@ -103,7 +103,7 @@ export function updateBullets(gameDt: number) {
                 e.showHpTimer = 2
                 if (e.hp <= 0) {
                   e.state = 'dead'
-                  SFX.enemyDeath()
+                  SFX.enemyDeath(e.type)
                   e.deathTimer = 3
                   state.killCount++
                   state.hitPauseTimer = 0.07
@@ -209,7 +209,7 @@ export function updateBullets(gameDt: number) {
         if (e.hp <= 0) {
           e.state = 'dead'
           state.hitPauseTimer = 0.05
-          SFX.enemyDeath()
+          SFX.enemyDeath(e.type)
           const deathFrames = enemyTypes[e.type]?.spriteConfig.death.frames ?? 10
           const deathFps = enemyTypes[e.type]?.spriteConfig.death.fps ?? 10
           e.deathTimer = (deathFrames / deathFps) + 2
@@ -297,6 +297,7 @@ export function updateBullets(gameDt: number) {
           state.gameOver = true
           state.deathSlowMo = true
           state.deathSlowMoTimer = 2.0
+          SFX.stopAmbient()
           spawnParticles(player.x + player.w / 2, player.y + player.h / 2, 30, '#f44', 300)
           saveScore()
         }

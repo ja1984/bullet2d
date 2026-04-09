@@ -3,6 +3,7 @@
 import type { WeaponType } from './types'
 import { CANVAS_W, CANVAS_H } from './constants'
 import { state } from './state'
+import { SFX } from './audio'
 
 export function getAvailableWeapons(): WeaponType[] {
   const all: WeaponType[] = ['pistol', 'shotgun', 'm16', 'sniper', 'grenades']
@@ -43,7 +44,7 @@ export function setupInput(canvas: HTMLCanvasElement) {
   })
   canvas.addEventListener('mousedown', () => {
     state.mouseDown = true; state.mouseClicked = true
-    if (state.gameState === 'title') { state.gameState = 'playing' }
+    if (state.gameState === 'title') { state.gameState = 'playing'; SFX.startAmbient() }
   })
   canvas.addEventListener('mouseup', () => { state.mouseDown = false })
 
