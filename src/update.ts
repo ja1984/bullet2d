@@ -481,19 +481,15 @@ export function update(dt: number) {
 
     // Find closest alive player to target
     let targetX = player.x, targetY = player.y, targetW = player.w, targetH = player.h
-    let hasTarget = player.hp > 0
-    if (state.coopEnabled && state.players.length >= 2) {
-      const p2 = state.players[1]
-      if (player.hp <= 0 && p2.hp > 0) {
-        targetX = p2.x; targetY = p2.y; targetW = p2.w; targetH = p2.h
+    let hasTarget = false
+    let closestDist = Infinity
+    for (const p of state.players) {
+      if (p.hp <= 0) continue
+      const d = Math.abs(p.x - e.x) + Math.abs(p.y - e.y)
+      if (d < closestDist) {
+        closestDist = d
+        targetX = p.x; targetY = p.y; targetW = p.w; targetH = p.h
         hasTarget = true
-      } else if (player.hp > 0 && p2.hp > 0) {
-        // Both alive — pick closest
-        const d1 = Math.abs(player.x - e.x) + Math.abs(player.y - e.y)
-        const d2 = Math.abs(p2.x - e.x) + Math.abs(p2.y - e.y)
-        if (d2 < d1) {
-          targetX = p2.x; targetY = p2.y; targetW = p2.w; targetH = p2.h
-        }
       }
     }
 

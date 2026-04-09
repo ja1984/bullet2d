@@ -258,8 +258,7 @@ export function checkAllPlayersDead() {
   if (state.gameOver) return
   if (state.coopEnabled) {
     // In co-op, only game over if ALL players are dead
-    const allDead = state.player.hp <= 0 &&
-      (state.players.length < 2 || state.players[1].hp <= 0)
+    const allDead = state.players.every(p => p.hp <= 0)
     if (!allDead) return
   }
   state.gameOver = true

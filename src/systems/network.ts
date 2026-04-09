@@ -12,8 +12,7 @@ import { restart } from '../main'
 let socket: PartySocket | null = null
 let connected = false
 let roomCode = ''
-let localPlayerIndex = 0 // 0 = first to join, 1 = second
-let remotePlayerIndex = 1
+let localPlayerIndex = 0 // 0 = first to join, 1/2/3 = others
 let lastSyncTime = 0
 let inRoom = false
 
@@ -28,12 +27,8 @@ let prevAmmoCount = 0
 let prevCoverCount = 0
 let prevPlatformCount = 0
 
-// Remote player interpolation target
-let remoteTargetX = 0
-let remoteTargetY = 0
-let remoteVx = 0
-let remoteVy = 0
-let hasRemoteTarget = false
+// Remote player interpolation targets (per player index)
+const remoteTargets: Map<number, { x: number; y: number; vx: number; vy: number }> = new Map()
 
 // Enemy interpolation targets (guest only)
 const enemyTargets: Map<number, { x: number; y: number; vx: number; vy: number }> = new Map()
@@ -97,24 +92,22 @@ function connectToRoom(room: string) {
     switch (msg.type) {
       case 'welcome':
         localPlayerIndex = msg.playerIndex
-        remotePlayerIndex = localPlayerIndex === 0 ? 1 : 0
         roomCode = msg.roomCode
         inRoom = true
         onStatusChange?.(`Room: ${roomCode} — You are P${localPlayerIndex + 1}`)
         break
 
-      case 'player_joined':
+      case 'player_joined': {
         onStatusChange?.(`P${msg.playerIndex + 1} joined! Room: ${roomCode}`)
         state.coopEnabled = true
-        if (state.players.length < 2) {
-          state.players.push(createPlayerState(1, state.player.x + 50, state.player.y))
-        }
-        // Host sends level data to guest, then both start
+        ensureRemotePlayer(msg.playerIndex)
+        // Host sends level data to new player, then start
         if (isHost()) {
           sendGameStart()
           startMultiplayerGame()
         }
         break
+      }
 
       case 'game_start':
         applyGameStart(msg)
@@ -124,11 +117,18 @@ function connectToRoom(room: string) {
         applyWaveLevel(msg)
         break
 
-      case 'player_left':
-        onStatusChange?.('Other player left')
-        state.coopEnabled = false
-        state.players.length = 1
+      case 'player_left': {
+        onStatusChange?.(`P${(msg.playerIndex ?? 0) + 1} left`)
+        if (msg.playerIndex != null) {
+          const slot = remoteSlot(msg.playerIndex)
+          if (slot > 0 && slot < state.players.length) {
+            state.players.splice(slot, 1)
+            remoteTargets.delete(slot)
+          }
+        }
+        state.coopEnabled = state.players.length > 1
         break
+      }
 
       case 'error':
         onStatusChange?.(msg.message)
@@ -248,11 +248,10 @@ function connectToRoom(room: string) {
         for (const w of msg.weaponPickups) {
           state.weaponPickups.push({ ...w, bobTimer: Math.random() * Math.PI * 2, collected: false })
         }
-        if (state.players.length < 2) {
-          state.players.push(createPlayerState(1, state.player.x + 50, state.player.y))
-        } else {
-          const p2 = state.players[1]
-          p2.hp = 100; p2.x = state.player.x + 50; p2.y = state.player.y
+        // Reset all remote players
+        for (let i = 1; i < state.players.length; i++) {
+          const p = state.players[i]
+          p.hp = 100; p.x = state.player.x + 50 * i; p.y = state.player.y
         }
         state.coopEnabled = true
         break
@@ -268,6 +267,8 @@ export function disconnect() {
   roomCode = ''
   state.coopEnabled = false
   state.players.length = 1
+  remoteTargets.clear()
+  enemyTargets.clear()
 }
 
 // ─── Send local player state ────────────────────────────────────────────────
@@ -284,6 +285,7 @@ export function sendPlayerState() {
   const aimAngle = Math.atan2(aimWorldY - (p.y + p.h / 2), aimWorldX - (p.x + p.w / 2))
   socket.send(JSON.stringify({
     type: 'player_state',
+    pi: localPlayerIndex,
     x: Math.round(p.x),
     y: Math.round(p.y),
     vx: Math.round(p.vx),
@@ -304,54 +306,63 @@ export function sendPlayerState() {
 
 // ─── Receive other player state ─────────────────────────────────────────────
 
-function applyRemotePlayerState(msg: any) {
-  // Ensure P2 exists
-  if (state.players.length < 2) {
-    state.players.push(createPlayerState(1))
-    state.coopEnabled = true
+// Map remote playerIndex to local players array slot (1, 2, 3...)
+function remoteSlot(remoteIndex: number): number {
+  // Local player is always players[0]. Remote players fill slots 1+ in order of their playerIndex.
+  // We need a stable mapping: remote indices excluding our own, sorted.
+  // Simplest: slot = remoteIndex < localPlayerIndex ? remoteIndex + 1 : remoteIndex
+  // Actually even simpler — just use the remote index directly, skipping our own slot.
+  return remoteIndex < localPlayerIndex ? remoteIndex + 1 : remoteIndex
+}
+
+function ensureRemotePlayer(remoteIndex: number) {
+  const slot = remoteSlot(remoteIndex)
+  while (state.players.length <= slot) {
+    state.players.push(createPlayerState(state.players.length, state.player.x + 50 * state.players.length, state.player.y))
   }
+}
 
-  const p2 = state.players[1]
+function applyRemotePlayerState(msg: any) {
+  const slot = remoteSlot(msg.pi)
+  ensureRemotePlayer(msg.pi)
+  state.coopEnabled = true
 
-  // Store target for interpolation
-  remoteTargetX = msg.x
-  remoteTargetY = msg.y
-  remoteVx = msg.vx
-  remoteVy = msg.vy
-  hasRemoteTarget = true
+  const p = state.players[slot]
+
+  // Store interpolation target
+  remoteTargets.set(slot, { x: msg.x, y: msg.y, vx: msg.vx, vy: msg.vy })
 
   // Snap if far off
-  const dx = msg.x - p2.x
-  const dy = msg.y - p2.y
-  if (Math.abs(dx) > 150 || Math.abs(dy) > 150) {
-    p2.x = msg.x; p2.y = msg.y
+  if (Math.abs(msg.x - p.x) > 150 || Math.abs(msg.y - p.y) > 150) {
+    p.x = msg.x; p.y = msg.y
   }
 
-  p2.hp = msg.hp; p2.facing = msg.f
-  p2.onGround = msg.g === 1
-  p2.crouching = msg.c === 1
-  p2.diving = msg.d === 1
-  p2.rolling = msg.r === 1
-  p2.bulletTimeActive = msg.bt === 1
-  if (msg.anim) p2.currentAnim = msg.anim
-  if (msg.at != null) p2.animTimer = msg.at
-  if (msg.w) p2.currentWeapon = msg.w
-  if (msg.aa != null) p2.aimAngle = msg.aa
+  p.hp = msg.hp; p.facing = msg.f
+  p.onGround = msg.g === 1
+  p.crouching = msg.c === 1
+  p.diving = msg.d === 1
+  p.rolling = msg.r === 1
+  p.bulletTimeActive = msg.bt === 1
+  if (msg.anim) p.currentAnim = msg.anim
+  if (msg.at != null) p.animTimer = msg.at
+  if (msg.w) p.currentWeapon = msg.w
+  if (msg.aa != null) p.aimAngle = msg.aa
 }
 
 // Call this every frame to smoothly move remote player toward target
 export function updateRemotePlayer(dt: number) {
-  // Interpolate remote player
-  if (hasRemoteTarget && state.players.length >= 2) {
-    const p2 = state.players[1]
-    p2.x += remoteVx * dt
-    p2.y += remoteVy * dt
-    const dx = remoteTargetX - p2.x
-    const dy = remoteTargetY - p2.y
-    p2.x += dx * 8 * dt
-    p2.y += dy * 8 * dt
-    p2.vx = remoteVx
-    p2.vy = remoteVy
+  // Interpolate all remote players
+  for (const [slot, target] of remoteTargets) {
+    const p = state.players[slot]
+    if (!p) continue
+    p.x += target.vx * dt
+    p.y += target.vy * dt
+    const dx = target.x - p.x
+    const dy = target.y - p.y
+    p.x += dx * 8 * dt
+    p.y += dy * 8 * dt
+    p.vx = target.vx
+    p.vy = target.vy
   }
 
   // Interpolate enemies on guest
@@ -405,11 +416,7 @@ function applyGameStart(msg: any) {
     state.weaponPickups.push({ ...w, bobTimer: Math.random() * Math.PI * 2, collected: false })
   }
 
-  // Create P2 slot
   state.coopEnabled = true
-  if (state.players.length < 2) {
-    state.players.push(createPlayerState(1, state.player.x + 50, state.player.y))
-  }
 
   startMultiplayerGame()
 }

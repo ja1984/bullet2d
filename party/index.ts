@@ -8,7 +8,7 @@ export default class GameRelay implements Party.Server {
 
   onConnect(conn: Party.Connection) {
     const count = [...this.room.getConnections()].length
-    if (count > 2) {
+    if (count > 4) {
       conn.send(JSON.stringify({ type: 'error', message: 'Room is full' }))
       conn.close()
       return
@@ -36,9 +36,10 @@ export default class GameRelay implements Party.Server {
   }
 
   onClose(conn: Party.Connection) {
+    const pi = (conn.state as any)?.playerIndex ?? -1
     for (const other of this.room.getConnections()) {
       if (other.id !== conn.id) {
-        other.send(JSON.stringify({ type: 'player_left' }))
+        other.send(JSON.stringify({ type: 'player_left', playerIndex: pi }))
       }
     }
   }
