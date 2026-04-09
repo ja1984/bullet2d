@@ -112,6 +112,7 @@ export const state = {
   deathSlowMoTimer: 0,
   gameState: 'title' as 'title' | 'playing' | 'paused',
   highScore: parseInt(localStorage.getItem('bulletTime2d_highScore') || '0'),
+  highScores: JSON.parse(localStorage.getItem('bulletTime2d_highScores') || '[]') as { score: number; wave: number; kills: number; date: string }[],
 
   // Wave system
   wave: 0,
@@ -187,6 +188,30 @@ export const state = {
   // Hit pause
   hitPauseTimer: 0,
 
+  // Invincibility
+  invincibleTimer: 0,
+
   // Reinforcements
   reinforcementsSent: false,
+}
+
+export function saveScore() {
+  // Update single high score
+  if (state.totalScore > state.highScore) {
+    state.highScore = state.totalScore
+    localStorage.setItem('bulletTime2d_highScore', state.highScore.toString())
+  }
+  // Add to top 10 leaderboard
+  if (state.totalScore > 0) {
+    const entry = {
+      score: state.totalScore,
+      wave: state.wave,
+      kills: state.killCount,
+      date: new Date().toLocaleDateString(),
+    }
+    state.highScores.push(entry)
+    state.highScores.sort((a, b) => b.score - a.score)
+    state.highScores = state.highScores.slice(0, 10)
+    localStorage.setItem('bulletTime2d_highScores', JSON.stringify(state.highScores))
+  }
 }

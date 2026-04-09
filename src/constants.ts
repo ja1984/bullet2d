@@ -156,71 +156,193 @@ const WALLS: Rect[] = [
 const GROUND: Rect = { x: 0, y: 620, w: 2400, h: 100 }
 
 export const LEVELS: LevelLayout[] = [
-  { // Level 1 — City rooftops
+  { // Level 1 — Back Alley: tight ground fight with a few escape routes up
     platforms: [
       GROUND, ...WALLS,
-      { x: 200, y: 500, w: 200, h: 20 },
-      { x: 500, y: 420, w: 250, h: 20 },
-      { x: 850, y: 350, w: 200, h: 20 },
-      { x: 1100, y: 470, w: 180, h: 20 },
-      { x: 1400, y: 380, w: 220, h: 20 },
-      { x: 1700, y: 300, w: 200, h: 20 },
-      { x: 1500, y: 530, w: 250, h: 20 },
-      { x: 300, y: 300, w: 150, h: 20 },
-      { x: 50, y: 400, w: 120, h: 20 },
+      // Left building ledge — sniper perch
+      { x: 40, y: 380, w: 100, h: 20 },
+      // Dumpster hop — staircase up the left side
+      { x: 180, y: 520, w: 120, h: 20 },
+      { x: 260, y: 430, w: 160, h: 20 },
+      // Central catwalk
+      { x: 500, y: 360, w: 350, h: 20 },
+      // Fire escape right side — zigzag
+      { x: 950, y: 480, w: 180, h: 20 },
+      { x: 1100, y: 380, w: 160, h: 20 },
+      { x: 1300, y: 300, w: 200, h: 20 },
+      // Right ground platforms — shipping containers
+      { x: 1550, y: 540, w: 250, h: 20 },
+      { x: 1700, y: 460, w: 200, h: 20 },
+      // Far right elevated
+      { x: 1950, y: 350, w: 180, h: 20 },
+      { x: 2150, y: 480, w: 180, h: 20 },
+      // Small hop platforms for mobility
+      { x: 700, y: 500, w: 80, h: 20 },
+      { x: 420, y: 260, w: 100, h: 20, destructible: true, hp: 50, maxHp: 50 },
     ],
     spawnPositions: [
-      { x: 450, y: 570 }, { x: 700, y: 570 }, { x: 550, y: 370 },
-      { x: 900, y: 300 }, { x: 1150, y: 420 }, { x: 1450, y: 330 },
-      { x: 1750, y: 250 }, { x: 1550, y: 480 }, { x: 1900, y: 570 },
-      { x: 2100, y: 570 }, { x: 300, y: 250 }, { x: 100, y: 570 },
+      { x: 350, y: 570 }, { x: 650, y: 570 }, { x: 1000, y: 570 },
+      { x: 1400, y: 570 }, { x: 1800, y: 570 }, { x: 2100, y: 570 },
+      { x: 550, y: 310 }, { x: 1150, y: 330 }, { x: 1350, y: 250 },
+      { x: 300, y: 380 }, { x: 1750, y: 410 }, { x: 2000, y: 300 },
     ],
   },
-  { // Level 2 — Warehouse
+  { // Level 2 — Construction Site: vertical, lots of destructible scaffolding
     platforms: [
       GROUND, ...WALLS,
-      { x: 100, y: 480, w: 300, h: 20 },
-      { x: 500, y: 350, w: 180, h: 20 },
-      { x: 750, y: 480, w: 200, h: 20 },
-      { x: 1000, y: 350, w: 300, h: 20 },
-      { x: 1400, y: 480, w: 250, h: 20 },
-      { x: 1700, y: 350, w: 200, h: 20 },
-      { x: 1950, y: 480, w: 200, h: 20 },
-      { x: 600, y: 220, w: 200, h: 20, destructible: true, hp: 60, maxHp: 60 },
-      { x: 1200, y: 220, w: 200, h: 20, destructible: true, hp: 60, maxHp: 60 },
-      { x: 1800, y: 220, w: 150, h: 20, destructible: true, hp: 60, maxHp: 60 },
+      // Ground-level debris piles
+      { x: 150, y: 560, w: 200, h: 60 },
+      { x: 1900, y: 560, w: 250, h: 60 },
+      // First floor scaffolding
+      { x: 80, y: 470, w: 280, h: 20 },
+      { x: 450, y: 490, w: 200, h: 20 },
+      { x: 750, y: 470, w: 300, h: 20 },
+      { x: 1150, y: 490, w: 200, h: 20 },
+      { x: 1450, y: 470, w: 250, h: 20 },
+      { x: 1800, y: 490, w: 200, h: 20 },
+      { x: 2100, y: 470, w: 200, h: 20 },
+      // Second floor — destructible wooden planks
+      { x: 200, y: 350, w: 250, h: 20, destructible: true, hp: 45, maxHp: 45 },
+      { x: 550, y: 360, w: 180, h: 20, destructible: true, hp: 45, maxHp: 45 },
+      { x: 850, y: 340, w: 280, h: 20 },
+      { x: 1250, y: 360, w: 200, h: 20, destructible: true, hp: 45, maxHp: 45 },
+      { x: 1550, y: 340, w: 250, h: 20 },
+      { x: 1900, y: 360, w: 180, h: 20, destructible: true, hp: 45, maxHp: 45 },
+      // Top floor — steel beams
+      { x: 400, y: 220, w: 200, h: 20 },
+      { x: 750, y: 200, w: 250, h: 20 },
+      { x: 1100, y: 220, w: 300, h: 20 },
+      { x: 1600, y: 200, w: 200, h: 20 },
+      // Crane arm
+      { x: 1900, y: 160, w: 350, h: 20 },
     ],
     spawnPositions: [
-      { x: 200, y: 570 }, { x: 550, y: 300 }, { x: 800, y: 430 },
-      { x: 1100, y: 300 }, { x: 1500, y: 430 }, { x: 1750, y: 300 },
-      { x: 2000, y: 430 }, { x: 350, y: 430 }, { x: 1900, y: 570 },
-      { x: 700, y: 170 }, { x: 1300, y: 170 }, { x: 100, y: 570 },
+      { x: 400, y: 570 }, { x: 800, y: 570 }, { x: 1200, y: 570 },
+      { x: 1600, y: 570 }, { x: 200, y: 420 }, { x: 800, y: 420 },
+      { x: 1500, y: 420 }, { x: 2150, y: 420 }, { x: 900, y: 290 },
+      { x: 1200, y: 170 }, { x: 1650, y: 150 }, { x: 500, y: 170 },
     ],
   },
-  { // Level 3 — Tower
+  { // Level 3 — Subway Station: long horizontal with pits and a central hub
     platforms: [
-      GROUND, ...WALLS,
-      { x: 300, y: 520, w: 400, h: 20 },
-      { x: 800, y: 520, w: 400, h: 20 },
-      { x: 1300, y: 520, w: 400, h: 20 },
-      { x: 1800, y: 520, w: 300, h: 20 },
-      { x: 200, y: 400, w: 300, h: 20 },
-      { x: 600, y: 400, w: 250, h: 20 },
-      { x: 1000, y: 400, w: 350, h: 20 },
-      { x: 1500, y: 400, w: 200, h: 20 },
-      { x: 1850, y: 400, w: 250, h: 20 },
-      { x: 400, y: 280, w: 200, h: 20, destructible: true, hp: 50, maxHp: 50 },
-      { x: 800, y: 280, w: 300, h: 20 },
-      { x: 1300, y: 280, w: 200, h: 20, destructible: true, hp: 50, maxHp: 50 },
-      { x: 1700, y: 280, w: 200, h: 20 },
-      { x: 600, y: 160, w: 200, h: 20, destructible: true, hp: 40, maxHp: 40 },
-      { x: 1100, y: 160, w: 200, h: 20, destructible: true, hp: 40, maxHp: 40 },
+      // No full ground — gaps create pits
+      ...WALLS,
+      // Left platform
+      { x: 0, y: 620, w: 500, h: 100 },
+      // Pit gap (500-700)
+      // Central hub platform
+      { x: 700, y: 620, w: 900, h: 100 },
+      // Pit gap (1600-1800)
+      // Right platform
+      { x: 1800, y: 620, w: 600, h: 100 },
+      // Train tracks at bottom of pits — deadly narrow
+      { x: 500, y: 700, w: 200, h: 20 },
+      { x: 1600, y: 700, w: 200, h: 20 },
+      // Ticket booth platforms — left side
+      { x: 60, y: 500, w: 180, h: 20 },
+      { x: 300, y: 420, w: 150, h: 20 },
+      // Overhead signs / hanging platforms — central
+      { x: 800, y: 440, w: 200, h: 20 },
+      { x: 1100, y: 400, w: 250, h: 20 },
+      { x: 1400, y: 440, w: 180, h: 20 },
+      // Bridge over left pit
+      { x: 450, y: 520, w: 300, h: 20, destructible: true, hp: 60, maxHp: 60 },
+      // Bridge over right pit
+      { x: 1600, y: 520, w: 250, h: 20, destructible: true, hp: 60, maxHp: 60 },
+      // Upper catwalks
+      { x: 200, y: 300, w: 200, h: 20 },
+      { x: 600, y: 280, w: 300, h: 20 },
+      { x: 1050, y: 260, w: 250, h: 20 },
+      { x: 1450, y: 280, w: 200, h: 20 },
+      { x: 1800, y: 300, w: 250, h: 20 },
+      // Top vantage points
+      { x: 500, y: 160, w: 200, h: 20 },
+      { x: 1100, y: 140, w: 200, h: 20, destructible: true, hp: 40, maxHp: 40 },
+      { x: 1700, y: 160, w: 200, h: 20 },
     ],
     spawnPositions: [
-      { x: 400, y: 570 }, { x: 900, y: 570 }, { x: 1400, y: 570 },
-      { x: 1900, y: 570 }, { x: 300, y: 350 }, { x: 700, y: 350 },
-      { x: 1100, y: 350 }, { x: 1600, y: 350 }, { x: 900, y: 230 },
-      { x: 1400, y: 230 }, { x: 700, y: 110 }, { x: 1200, y: 110 },
+      { x: 200, y: 570 }, { x: 400, y: 570 }, { x: 900, y: 570 },
+      { x: 1200, y: 570 }, { x: 1500, y: 570 }, { x: 2000, y: 570 },
+      { x: 850, y: 390 }, { x: 1150, y: 350 }, { x: 1450, y: 390 },
+      { x: 650, y: 230 }, { x: 1100, y: 210 }, { x: 1850, y: 250 },
+    ],
+  },
+  { // Level 4 — Penthouse: asymmetric, tight left side opens into wide right
+    platforms: [
+      GROUND, ...WALLS,
+      // Left side — tight corridor with low ceiling
+      { x: 40, y: 450, w: 350, h: 20 },
+      { x: 40, y: 320, w: 250, h: 20 },
+      // Elevator shaft — small platforms going up
+      { x: 420, y: 530, w: 80, h: 20 },
+      { x: 480, y: 430, w: 80, h: 20 },
+      { x: 420, y: 330, w: 80, h: 20 },
+      { x: 480, y: 230, w: 80, h: 20 },
+      // Main penthouse floor
+      { x: 600, y: 480, w: 500, h: 20 },
+      { x: 1200, y: 480, w: 400, h: 20 },
+      // Bar counter
+      { x: 700, y: 400, w: 180, h: 20 },
+      // Mezzanine / upper lounge
+      { x: 950, y: 320, w: 350, h: 20 },
+      { x: 1400, y: 350, w: 200, h: 20 },
+      // Balcony — far right, open
+      { x: 1700, y: 420, w: 300, h: 20 },
+      { x: 1800, y: 280, w: 250, h: 20 },
+      { x: 2050, y: 500, w: 280, h: 20 },
+      // Chandelier — destructible
+      { x: 800, y: 200, w: 200, h: 20, destructible: true, hp: 35, maxHp: 35 },
+      { x: 1300, y: 180, w: 200, h: 20, destructible: true, hp: 35, maxHp: 35 },
+      // Rooftop access
+      { x: 1600, y: 160, w: 250, h: 20 },
+      { x: 2100, y: 300, w: 200, h: 20 },
+    ],
+    spawnPositions: [
+      { x: 200, y: 570 }, { x: 800, y: 570 }, { x: 1300, y: 570 },
+      { x: 1800, y: 570 }, { x: 2200, y: 570 }, { x: 700, y: 430 },
+      { x: 1000, y: 270 }, { x: 1450, y: 300 }, { x: 1850, y: 370 },
+      { x: 850, y: 150 }, { x: 1350, y: 130 }, { x: 1700, y: 110 },
+    ],
+  },
+  { // Level 5 — Rooftops: wide open, mostly high up, long sightlines for snipers
+    platforms: [
+      GROUND, ...WALLS,
+      // Left rooftop
+      { x: 50, y: 400, w: 350, h: 20 },
+      { x: 50, y: 400, w: 20, h: 220 }, // wall edge
+      // Gap
+      // Center rooftop — main arena
+      { x: 500, y: 440, w: 600, h: 20 },
+      // Water tower
+      { x: 650, y: 340, w: 100, h: 20 },
+      { x: 670, y: 340, w: 15, h: 100 }, // support
+      { x: 765, y: 340, w: 15, h: 100 }, // support
+      // AC units as platforms
+      { x: 900, y: 380, w: 80, h: 60 },
+      // Right buildings — staggered heights
+      { x: 1200, y: 480, w: 300, h: 20 },
+      { x: 1250, y: 350, w: 200, h: 20 },
+      { x: 1600, y: 420, w: 250, h: 20 },
+      { x: 1650, y: 300, w: 180, h: 20 },
+      // Far right — tall building
+      { x: 1950, y: 340, w: 300, h: 20 },
+      { x: 2000, y: 200, w: 200, h: 20 },
+      // Antenna tower
+      { x: 2100, y: 200, w: 15, h: 140 },
+      // Bridging planks — destructible
+      { x: 380, y: 420, w: 140, h: 20, destructible: true, hp: 40, maxHp: 40 },
+      { x: 1100, y: 460, w: 120, h: 20, destructible: true, hp: 40, maxHp: 40 },
+      { x: 1500, y: 400, w: 120, h: 20, destructible: true, hp: 40, maxHp: 40 },
+      // Low ground connections
+      { x: 400, y: 550, w: 150, h: 20 },
+      { x: 1100, y: 560, w: 120, h: 20 },
+      { x: 1850, y: 540, w: 120, h: 20 },
+    ],
+    spawnPositions: [
+      { x: 150, y: 350 }, { x: 600, y: 390 }, { x: 1000, y: 390 },
+      { x: 1300, y: 430 }, { x: 1700, y: 370 }, { x: 2100, y: 290 },
+      { x: 700, y: 290 }, { x: 1300, y: 300 }, { x: 1700, y: 250 },
+      { x: 2050, y: 150 }, { x: 500, y: 570 }, { x: 1500, y: 570 },
     ],
   },
 ]
@@ -233,4 +355,9 @@ export function setLevel(index: number) {
   const level = LEVELS[index % LEVELS.length]
   platforms = [...level.platforms]
   spawnPositions = level.spawnPositions
+}
+
+export function setGeneratedLevel(plats: Rect[], spawns: Vec2[]) {
+  platforms = plats
+  spawnPositions = spawns
 }

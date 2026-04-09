@@ -6,10 +6,10 @@ import { setupInput } from './input'
 import { loadPlayerSprites } from './sprites/playerSprites'
 import { loadEnemySprites } from './sprites/enemySprites'
 import { loadWeaponSprites } from './sprites/weaponSprites'
-import { spawnWeaponPickups } from './systems/pickups'
 import { setupDebug } from './debug'
-import { spawnCoverBoxes } from './systems/waves'
 import { spawnAmbientObjects } from './systems/ambient'
+import { generateLevel, populateLevel } from './systems/levelgen'
+import { setGeneratedLevel } from './constants'
 import { update } from './update'
 import { render, renderTitleScreen } from './rendering/renderer'
 
@@ -45,8 +45,9 @@ const armImg = new Image()
 armImg.onload = () => { state.armSprite = armImg; console.log('Arm sprite loaded') }
 armImg.onerror = () => console.warn('Arm sprite not found: sprites/player/arm/arm_0.png')
 armImg.src = 'sprites/player/arm/arm_0.png'
-spawnWeaponPickups()
-spawnCoverBoxes()
+const initLevel = generateLevel(1)
+setGeneratedLevel(initLevel.platforms, initLevel.spawnPositions)
+populateLevel(initLevel.platforms, 1)
 spawnAmbientObjects()
 
 // ─── Restart ─────────────────────────────────────────────────────────────────
@@ -90,6 +91,9 @@ export function restart() {
   state.scoreMultiplier = 1.0
   state.raindrops.length = 0
   state.lightFlashes.length = 0
+  const restartLevel = generateLevel(1)
+  setGeneratedLevel(restartLevel.platforms, restartLevel.spawnPositions)
+  populateLevel(restartLevel.platforms, 1)
   spawnAmbientObjects()
   state.killCount = 0
   state.totalScore = 0

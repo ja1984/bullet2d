@@ -1,8 +1,9 @@
 // ─── Wave System ─────────────────────────────────────────────────────────────
 
 import type { CoverBox, EnemyBehavior } from '../types'
-import { ENEMY_CONFIGS, LEVELS, platforms, spawnPositions, setLevel } from '../constants'
+import { ENEMY_CONFIGS, LEVELS, platforms, spawnPositions, setLevel, setGeneratedLevel } from '../constants'
 import { state } from '../state'
+import { generateLevel, populateLevel } from './levelgen'
 
 // Difficulty multiplier — enemies get tougher each wave
 export function getDifficultyMult(): number {
@@ -61,12 +62,12 @@ export function getWaveEnemies(waveNum: number): { behavior: EnemyBehavior; coun
 
 export function startWave() {
   state.wave++
-  // Switch level every 5 waves
-  if (state.wave === 1 || state.wave % 5 === 1) {
-    const levelIdx = Math.floor((state.wave - 1) / 5) % LEVELS.length
-    setLevel(levelIdx)
-  }
+  // Generate a fresh level each wave
+  const level = generateLevel(state.wave)
+  setGeneratedLevel(level.platforms, level.spawnPositions)
+  populateLevel(level.platforms, state.wave)
   state.waveState = 'active'
+  state.invincibleTimer = 1.0
   state.reinforcementsSent = false
   const waveEnemies = getWaveEnemies(state.wave)
   let spawnIdx = 0

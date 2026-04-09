@@ -8,7 +8,7 @@ import {
   WALL_SLIDE_SPEED, WALL_JUMP_FORCE_X, WALL_JUMP_FORCE_Y,
   GRENADE_FUSE, GRENADE_RADIUS, GRENADE_BOUNCE_DAMP,
 } from './constants'
-import { state } from './state'
+import { state, saveScore } from './state'
 import { SFX } from './audio'
 import { getPlayerAnim } from './sprites/playerSprites'
 import { weaponSprites } from './sprites/weaponSprites'
@@ -16,7 +16,7 @@ import { resolvePhysics, checkWallContact } from './systems/physics'
 import { spawnParticles, spawnMuzzleFlash, spawnExplosionLight } from './systems/particles'
 import { updateBullets } from './systems/bullets'
 import { updateWeaponPickups, updateHealthPickups, updateAmmoPickups } from './systems/pickups'
-import { startWave, spawnCoverBoxes, getDifficultyMult, spawnEnemy } from './systems/waves'
+import { startWave, getDifficultyMult, spawnEnemy } from './systems/waves'
 import { updateAmbient, spawnAmbientObjects } from './systems/ambient'
 import type { EnemyBehavior } from './types'
 import { updateCamera } from './systems/camera'
@@ -46,6 +46,9 @@ export function update(dt: number) {
     state.hitPauseTimer -= dt
     return
   }
+
+  // Invincibility timer
+  if (state.invincibleTimer > 0) state.invincibleTimer -= dt
 
   // Bullet time (toggle on Shift press)
   const shiftDown = state.keys['Space']
@@ -264,6 +267,15 @@ export function update(dt: number) {
   }
 
   resolvePhysics(player, gameDt)
+
+  // Fall death — below ground level
+  if (player.y > 800) {
+    player.hp = 0
+    state.gameOver = true
+    state.deathSlowMo = true
+    state.deathSlowMoTimer = 2.0
+    saveScore()
+  }
 
   // ── Weapon Pickups ──
   updateWeaponPickups(dt)
@@ -613,7 +625,7 @@ export function update(dt: number) {
       const pdx = (player.x + player.w / 2) - g.x
       const pdy = (player.y + player.h / 2) - g.y
       const pdist = Math.sqrt(pdx * pdx + pdy * pdy)
-      if (pdist < GRENADE_RADIUS) {
+      if (pdist < GRENADE_RADIUS && state.invincibleTimer <= 0) {
         const falloff = 1 - pdist / GRENADE_RADIUS
         player.hp -= 30 * falloff
         state.screenShake = 10
@@ -717,6 +729,28 @@ export function update(dt: number) {
     state.scoreMultiplier = 0.5 + accuracy * 1.5 // 0.5x at 0% accuracy, 2.0x at 100%
   }
 
+  // ── Falling cover boxes ──
+  for (let i = state.coverBoxes.length - 1; i >= 0; i--) {
+    const box = state.coverBoxes[i]
+    if (!box.falling) continue
+    box.vy = (box.vy ?? 0) + GRAVITY * gameDt
+    box.y += box.vy * gameDt
+    // Land on platforms
+    for (const p of platforms) {
+      if (box.x + box.w > p.x && box.x < p.x + p.w &&
+          box.y + box.h >= p.y && box.y + box.h <= p.y + box.vy * gameDt + 4) {
+        box.y = p.y - box.h
+        box.vy = 0
+        box.falling = false
+        break
+      }
+    }
+    // Remove if fallen off screen
+    if (box.y > 900) {
+      state.coverBoxes.splice(i, 1)
+    }
+  }
+
   // ── Explosive barrel chain reactions ──
   for (let i = state.coverBoxes.length - 1; i >= 0; i--) {
     const box = state.coverBoxes[i]
@@ -751,7 +785,7 @@ export function update(dt: number) {
       const pdx = (player.x + player.w / 2) - cx
       const pdy = (player.y + player.h / 2) - cy
       const pDist = Math.sqrt(pdx * pdx + pdy * pdy)
-      if (pDist < radius) {
+      if (pDist < radius && state.invincibleTimer <= 0) {
         player.hp -= 25 * (1 - pDist / radius)
         player.vy = -200 * (1 - pDist / radius)
       }
@@ -872,7 +906,6 @@ export function update(dt: number) {
     if (state.waveTimer <= 0) {
       state.enemies.length = 0
       state.bloodDecals.length = 0
-      spawnCoverBoxes()
       spawnAmbientObjects()
       state.waveState = 'countdown'
       state.waveTimer = 3

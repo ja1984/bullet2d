@@ -47,12 +47,31 @@ export function spawnAmbientObjects() {
     }
   }
 
-  // Pigeons — small groups on wider platforms
+  // Pigeons — only on ground segments and wide elevated platforms
   state.pigeons.length = 0
-  const widePlats = platforms.filter(p => p.h <= 20 && p.w >= 180 && p.y < groundY)
-  for (const plat of widePlats) {
+  const groundPlats = platforms.filter(p => p.y === groundY && p.w >= 200)
+  for (const gp of groundPlats) {
     if (Math.random() < 0.5) {
+      const gx = gp.x + 60 + Math.random() * (gp.w - 120)
       const count = 2 + Math.floor(Math.random() * 3)
+      for (let j = 0; j < count; j++) {
+        state.pigeons.push({
+          x: gx + (Math.random() - 0.5) * 60,
+          y: groundY - 6,
+          vx: 0,
+          vy: 0,
+          grounded: true,
+          scattered: false,
+          life: 999,
+          peckTimer: Math.random() * 2,
+        })
+      }
+    }
+  }
+  const widePlats = platforms.filter(p => p.h <= 20 && p.w >= 200 && p.y < groundY)
+  for (const plat of widePlats) {
+    if (Math.random() < 0.3) {
+      const count = 2 + Math.floor(Math.random() * 2)
       for (let j = 0; j < count; j++) {
         state.pigeons.push({
           x: plat.x + 30 + Math.random() * (plat.w - 60),
@@ -65,23 +84,6 @@ export function spawnAmbientObjects() {
           peckTimer: Math.random() * 2,
         })
       }
-    }
-  }
-  // Also some on the ground
-  if (Math.random() < 0.7) {
-    const gx = 400 + Math.random() * 1600
-    const count = 3 + Math.floor(Math.random() * 3)
-    for (let j = 0; j < count; j++) {
-      state.pigeons.push({
-        x: gx + (Math.random() - 0.5) * 80,
-        y: groundY - 6,
-        vx: 0,
-        vy: 0,
-        grounded: true,
-        scattered: false,
-        life: 999,
-        peckTimer: Math.random() * 2,
-      })
     }
   }
 

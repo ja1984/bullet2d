@@ -2,7 +2,7 @@
 
 import type { WeaponType } from '../types'
 import { COMBO_WINDOW, GRENADE_RADIUS, WEAPONS, platforms } from '../constants'
-import { state } from '../state'
+import { state, saveScore } from '../state'
 import { SFX } from '../audio'
 import { spawnParticles, spawnExplosionLight } from './particles'
 import { enemyTypes } from '../sprites/enemySprites'
@@ -35,6 +35,14 @@ export function updateBullets(gameDt: number) {
             spawnParticles(p.x + p.w / 2, p.y + p.h / 2, 12, '#aa8855', 180)
             spawnExplosionLight(p.x + p.w / 2, p.y + p.h / 2)
             state.screenShake = 4
+            // Make boxes on this platform fall
+            for (const box of coverBoxes) {
+              if (box.x + box.w > p.x && box.x < p.x + p.w &&
+                  box.y + box.h >= p.y - 2 && box.y + box.h <= p.y + 4) {
+                box.falling = true
+                box.vy = 0
+              }
+            }
             platforms.splice(pi, 1)
           }
         }
@@ -108,7 +116,7 @@ export function updateBullets(gameDt: number) {
             const pdx = (player.x + player.w / 2) - cx
             const pdy = (player.y + player.h / 2) - cy
             const pDist = Math.sqrt(pdx * pdx + pdy * pdy)
-            if (pDist < radius) {
+            if (pDist < radius && state.invincibleTimer <= 0) {
               const falloff = 1 - pDist / radius
               player.hp -= 25 * falloff
               player.vy = -200 * falloff
@@ -275,7 +283,7 @@ export function updateBullets(gameDt: number) {
     }
 
     // Hit player (enemy bullets)
-    if (b.owner === 'enemy') {
+    if (b.owner === 'enemy' && state.invincibleTimer <= 0) {
       if (b.x > player.x && b.x < player.x + player.w && b.y > player.y && b.y < player.y + player.h) {
         player.hp -= b.damage
         player.hitFlash = 0.15
@@ -290,11 +298,7 @@ export function updateBullets(gameDt: number) {
           state.deathSlowMo = true
           state.deathSlowMoTimer = 2.0
           spawnParticles(player.x + player.w / 2, player.y + player.h / 2, 30, '#f44', 300)
-          // Save high score
-          if (state.totalScore > state.highScore) {
-            state.highScore = state.totalScore
-            localStorage.setItem('bulletTime2d_highScore', state.highScore.toString())
-          }
+          saveScore()
         }
       }
     }

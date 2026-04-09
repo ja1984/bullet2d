@@ -175,6 +175,11 @@ export function drawPlayer() {
   const { player, camera, mouse } = state
   const px = player.x, py = player.y
 
+  // Invincibility flash — pulse opacity instead of disappearing
+  if (state.invincibleTimer > 0) {
+    ctx.globalAlpha = 0.4 + Math.sin(state.gameTime * 20) * 0.3
+  }
+
   if (player.rolling) {
     ctx.globalAlpha = 0.2
     ctx.fillStyle = '#6688ff'
@@ -412,4 +417,5 @@ export function drawPlayer() {
     ctx.fillStyle = `rgb(${Math.floor(255 * chargePower)}, ${Math.floor(200 * (1 - chargePower))}, 50)`
     ctx.fillRect(cx - 15, cy - 20, 30 * chargePower, 4)
   }
+  ctx.globalAlpha = 1
 }

@@ -9,6 +9,9 @@ import { drawHUD, drawOverlays } from './drawHUD'
 
 let reflectionCanvas: HTMLCanvasElement | null = null
 
+const carImg = new Image()
+carImg.src = 'sprites/other/car.png'
+
 
 export function render() {
   const ctx = state.ctx!
@@ -287,6 +290,94 @@ export function renderTitleScreen() {
     ctx.fillRect(bx, CANVAS_H - bh - 100, 100, bh + 100)
   }
 
+  // Ground
+  const groundY = 620
+  ctx.fillStyle = '#2a2a3e'
+  ctx.fillRect(0, groundY, CANVAS_W, 100)
+  ctx.fillStyle = '#4a4a6e'
+  ctx.fillRect(0, groundY, CANVAS_W, 2)
+  ctx.fillStyle = '#1a1a2e'
+  ctx.fillRect(0, groundY, 2, 100)
+  ctx.fillRect(CANVAS_W - 2, groundY, 2, 100)
+
+  // Streetlights on ground
+  for (let i = 0; i < 4; i++) {
+    const sx = 200 + i * 300
+    ctx.fillStyle = '#333344'
+    ctx.fillRect(sx - 2, groundY - 70, 4, 70)
+    ctx.fillRect(sx - 1, groundY - 70, 12, 3)
+    ctx.fillStyle = '#444455'
+    ctx.fillRect(sx + 6, groundY - 70, 8, 5)
+    const flicker = Math.sin(state.gameTime * 12 + i * 3.5) > -0.85 ? 1 : 0
+    if (flicker) {
+      ctx.fillStyle = '#ffcc66'
+      ctx.fillRect(sx + 7, groundY - 67, 6, 2)
+      ctx.globalAlpha = 0.06
+      const grad = ctx.createRadialGradient(sx + 10, groundY, 0, sx + 10, groundY, 70)
+      grad.addColorStop(0, '#ffcc66')
+      grad.addColorStop(1, 'rgba(255,204,102,0)')
+      ctx.fillStyle = grad
+      ctx.fillRect(sx - 60, groundY - 70, 140, 80)
+      ctx.globalAlpha = 1
+    }
+  }
+
+  // Parked car on the ground
+  if (carImg.complete && carImg.naturalWidth > 0) {
+    ctx.imageSmoothingEnabled = false
+    const carScale = 0.6
+    const carW = carImg.naturalWidth * carScale
+    const carH = carImg.naturalHeight * carScale
+    ctx.drawImage(carImg, 160, groundY - carH + 4, carW, carH)
+  }
+
+  // Drones patrolling
+  for (let d = 0; d < 3; d++) {
+    const speed = 30 + d * 15
+    const dx = ((state.gameTime * speed + d * 500) % (CANVAS_W + 200)) - 100
+    const dy = 120 + d * 80 + Math.sin(state.gameTime * 2 + d * 2) * 10
+    // Body
+    ctx.fillStyle = '#556677'
+    ctx.fillRect(dx - 7, dy - 4, 14, 8)
+    // Eye
+    ctx.fillStyle = d % 2 === 0 ? '#ff4444' : '#44ffaa'
+    ctx.fillRect(dx - 2, dy - 2, 4, 3)
+    // Propeller arms
+    ctx.fillStyle = '#445566'
+    ctx.fillRect(dx - 10, dy - 6, 20, 2)
+    // Spinning propellers
+    const spin = Math.sin(state.gameTime * 30 + d * 7) * 4
+    ctx.fillStyle = '#88aabb'
+    ctx.fillRect(dx - 10 + spin, dy - 8, 3, 2)
+    ctx.fillRect(dx + 7 - spin, dy - 8, 3, 2)
+    // Searchlight cone
+    ctx.globalAlpha = 0.03
+    ctx.beginPath()
+    ctx.moveTo(dx, dy + 4)
+    ctx.lineTo(dx - 20, groundY)
+    ctx.lineTo(dx + 20, groundY)
+    ctx.closePath()
+    ctx.fillStyle = d % 2 === 0 ? '#ff6644' : '#44ffaa'
+    ctx.fill()
+    ctx.globalAlpha = 1
+  }
+
+  // Rain
+  ctx.globalAlpha = 0.12
+  ctx.strokeStyle = '#8899bb'
+  ctx.lineWidth = 1
+  for (let i = 0; i < 40; i++) {
+    const rx = ((state.gameTime * 200 + i * 97) % (CANVAS_W + 40)) - 20
+    const ry = ((state.gameTime * (400 + i * 5) + i * 137) % (groundY + 20)) - 10
+    if (ry < groundY - 5) {
+      ctx.beginPath()
+      ctx.moveTo(rx, ry)
+      ctx.lineTo(rx + 2, Math.min(ry + 8 + (i % 4) * 2, groundY))
+      ctx.stroke()
+    }
+  }
+  ctx.globalAlpha = 1
+
   // Title
   ctx.fillStyle = '#ff3333'
   ctx.font = 'bold 52px Audiowide, monospace'
@@ -296,27 +387,35 @@ export function renderTitleScreen() {
   ctx.font = 'bold 28px Audiowide, monospace'
   ctx.fillText('2 D', CANVAS_W / 2, CANVAS_H / 2 - 45)
 
-  // High score
-  if (state.highScore > 0) {
+  // High scores leaderboard
+  if (state.highScores.length > 0) {
     ctx.fillStyle = '#ffaa22'
-    ctx.font = '14px monospace'
-    ctx.fillText(`High Score: ${state.highScore}`, CANVAS_W / 2, CANVAS_H / 2 - 10)
+    ctx.font = 'bold 12px Audiowide, monospace'
+    ctx.fillText('TOP SCORES', CANVAS_W / 2, CANVAS_H / 2 - 8)
+    ctx.font = '10px monospace'
+    for (let i = 0; i < Math.min(5, state.highScores.length); i++) {
+      const hs = state.highScores[i]
+      const y = CANVAS_H / 2 + 10 + i * 15
+      ctx.fillStyle = i === 0 ? '#ffcc44' : '#888'
+      ctx.fillText(`${i + 1}. ${hs.score}  W${hs.wave}  ${hs.kills}K  ${hs.date}`, CANVAS_W / 2, y)
+    }
   }
 
   // Controls
+  const controlsY = state.highScores.length > 0 ? CANVAS_H / 2 + 90 : CANVAS_H / 2 + 20
   ctx.fillStyle = '#888'
   ctx.font = '12px monospace'
-  ctx.fillText('WASD — Move  |  Mouse — Aim & Shoot', CANVAS_W / 2, CANVAS_H / 2 + 20)
-  ctx.fillText('Space — Bullet Time  |  S — Crouch', CANVAS_W / 2, CANVAS_H / 2 + 38)
-  ctx.fillText('Double-tap A/D — Dive  |  Crouch + A/D — Roll', CANVAS_W / 2, CANVAS_H / 2 + 56)
-  ctx.fillText('1/2/3/4 or Scroll — Weapons  |  R — Reload', CANVAS_W / 2, CANVAS_H / 2 + 74)
+  ctx.fillText('WASD — Move  |  Mouse — Aim & Shoot', CANVAS_W / 2, controlsY)
+  ctx.fillText('Space — Bullet Time  |  S — Crouch', CANVAS_W / 2, controlsY + 18)
+  ctx.fillText('Double-tap A/D — Dive  |  Crouch + A/D — Roll', CANVAS_W / 2, controlsY + 36)
+  ctx.fillText('1/2/3/4 or Scroll — Weapons  |  R — Reload', CANVAS_W / 2, controlsY + 54)
 
   // Start prompt
   const pulse = 0.5 + Math.sin(state.gameTime * 3) * 0.5
   ctx.globalAlpha = 0.5 + pulse * 0.5
   ctx.fillStyle = '#fff'
   ctx.font = 'bold 18px monospace'
-  ctx.fillText('Click to Start', CANVAS_W / 2, CANVAS_H / 2 + 100)
+  ctx.fillText('Click to Start', CANVAS_W / 2, controlsY + 80)
   ctx.globalAlpha = 1
   ctx.textAlign = 'left'
 }

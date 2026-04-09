@@ -111,6 +111,8 @@ export interface CoverBox {
   hp: number
   maxHp: number
   type: 'crate' | 'barrel' | 'sandbag' | 'explosive'
+  vy?: number
+  falling?: boolean
 }
 
 export interface AmmoPickup {

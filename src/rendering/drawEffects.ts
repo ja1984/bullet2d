@@ -62,9 +62,9 @@ export function drawBullets() {
     ctx.fill()
 
     if (state.player.bulletTimeActive) {
-      ctx.fillStyle = glowColor + '0.2)'
+      ctx.fillStyle = glowColor + '0.15)'
       ctx.beginPath()
-      ctx.arc(b.x, b.y, 14, 0, Math.PI * 2)
+      ctx.arc(b.x, b.y, 8, 0, Math.PI * 2)
       ctx.fill()
     }
   }

@@ -273,7 +273,18 @@ export function drawHUD() {
 
     ctx.fillStyle = 'rgba(255, 100, 50, 0.7)'
     ctx.font = 'bold 14px monospace'
-    ctx.fillText('● BULLET TIME', CANVAS_W / 2 - 60, 30)
+    ctx.textAlign = 'center'
+    ctx.fillText('● BULLET TIME', CANVAS_W / 2, 55)
+    ctx.textAlign = 'left'
+  }
+
+  // Kill cam indicator — shown in same spot as bullet time text
+  if (killCamActive && !player.bulletTimeActive) {
+    ctx.fillStyle = 'rgba(255, 200, 50, 0.6)'
+    ctx.font = 'bold 14px monospace'
+    ctx.textAlign = 'center'
+    ctx.fillText('● LAST KILL', CANVAS_W / 2, 55)
+    ctx.textAlign = 'left'
   }
 
   // Screen flash border
@@ -284,15 +295,6 @@ export function drawHUD() {
     ctx.fillRect(0, CANVAS_H - borderW, CANVAS_W, borderW)
     ctx.fillRect(0, 0, borderW, CANVAS_H)
     ctx.fillRect(CANVAS_W - borderW, 0, borderW, CANVAS_H)
-  }
-
-  // Kill cam indicator
-  if (killCamActive) {
-    ctx.fillStyle = 'rgba(255, 200, 50, 0.6)'
-    ctx.font = 'bold 16px monospace'
-    ctx.textAlign = 'center'
-    ctx.fillText('● LAST KILL', CANVAS_W / 2, CANVAS_H - 50)
-    ctx.textAlign = 'left'
   }
 
   // Parallax foreground — subtle fog/debris
@@ -348,13 +350,24 @@ export function drawOverlays() {
     ctx.font = '18px monospace'
     ctx.fillText(`Wave: ${wave}  |  Kills: ${killCount}  |  Score: ${totalScore}`, CANVAS_W / 2, CANVAS_H / 2 + 10)
 
-    ctx.fillStyle = highScore === totalScore && totalScore > 0 ? '#ffaa22' : '#888'
-    ctx.font = '14px monospace'
-    ctx.fillText(`High Score: ${highScore}${highScore === totalScore && totalScore > 0 ? ' ★ NEW!' : ''}`, CANVAS_W / 2, CANVAS_H / 2 + 35)
+    // Leaderboard
+    if (state.highScores.length > 0) {
+      ctx.fillStyle = '#ffaa22'
+      ctx.font = 'bold 11px Audiowide, monospace'
+      ctx.fillText('TOP SCORES', CANVAS_W / 2, CANVAS_H / 2 + 40)
+      ctx.font = '10px monospace'
+      for (let i = 0; i < Math.min(5, state.highScores.length); i++) {
+        const hs = state.highScores[i]
+        const isCurrentRun = hs.score === totalScore && hs.wave === wave && hs.kills === killCount
+        ctx.fillStyle = isCurrentRun ? '#ffcc44' : i === 0 ? '#ffaa22' : '#777'
+        const y = CANVAS_H / 2 + 56 + i * 14
+        ctx.fillText(`${i + 1}. ${hs.score}  W${hs.wave}  ${hs.kills}K${isCurrentRun ? '  ← YOU' : ''}`, CANVAS_W / 2, y)
+      }
+    }
 
     ctx.fillStyle = '#666'
     ctx.font = '14px monospace'
-    ctx.fillText('Press R to restart', CANVAS_W / 2, CANVAS_H / 2 + 65)
+    ctx.fillText('Press R to restart', CANVAS_W / 2, CANVAS_H / 2 + 140)
     ctx.textAlign = 'left'
   }
 
