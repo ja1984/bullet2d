@@ -127,7 +127,8 @@ export function restart() {
 
 // ─── Game Loop ───────────────────────────────────────────────────────────────
 
-let lastTime = 0
+let lastTime = performance.now()
+let bgInterval: ReturnType<typeof setInterval> | null = null
 
 function gameLoop(timestamp: number) {
   const dt = Math.min((timestamp - lastTime) / 1000, 0.05) // cap delta
@@ -147,6 +148,28 @@ function gameLoop(timestamp: number) {
   }
   requestAnimationFrame(gameLoop)
 }
+
+// When tab loses focus, run update loop via setInterval so multiplayer keeps syncing
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && state.coopEnabled) {
+    if (!bgInterval) {
+      bgInterval = setInterval(() => {
+        const now = performance.now()
+        const dt = Math.min((now - lastTime) / 1000, 0.05)
+        lastTime = now
+        if (state.gameState === 'playing') {
+          update(dt)
+        }
+      }, 1000 / 30) // 30fps in background
+    }
+  } else {
+    if (bgInterval) {
+      clearInterval(bgInterval)
+      bgInterval = null
+      lastTime = performance.now() // prevent huge dt spike on return
+    }
+  }
+})
 
 requestAnimationFrame((t) => {
   lastTime = t

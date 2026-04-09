@@ -235,6 +235,10 @@ function connectToRoom(room: string) {
         }
         break
 
+      case 'pause':
+        state.gameState = msg.paused ? 'paused' : 'playing'
+        break
+
       case 'game_restart':
         // Other player triggered restart — apply their level data
         restart()
@@ -628,6 +632,13 @@ function startMultiplayerGame() {
     state.gameState = 'playing'
     SFX.startAmbient()
   }
+}
+
+// ─── Pause sync ────────────────────────────────────────────────────────────
+
+export function sendPause(paused: boolean) {
+  if (!socket || !connected || !inRoom) return
+  socket.send(JSON.stringify({ type: 'pause', paused, pi: localPlayerIndex }))
 }
 
 // ─── Restart sync ──────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import { CANVAS_W, CANVAS_H, PLAYER_SKINS } from './constants'
 import { state } from './state'
 import { SFX } from './audio'
 import { setSkin } from './sprites/playerSprites'
+import { sendPause, isHost } from './systems/network'
 
 export function getAvailableWeapons(): WeaponType[] {
   const all: WeaponType[] = ['pistol', 'shotgun', 'm16', 'sniper', 'grenades']
@@ -35,8 +36,10 @@ export function setupInput(canvas: HTMLCanvasElement) {
     }
     if (e.code === 'Escape' && state.gameState === 'playing') {
       state.gameState = 'paused'
+      if (state.coopEnabled && isHost()) sendPause(true)
     } else if (e.code === 'Escape' && state.gameState === 'paused') {
       state.gameState = 'playing'
+      if (state.coopEnabled && isHost()) sendPause(false)
     }
     if (e.code === 'F11' || (e.code === 'KeyF' && e.ctrlKey)) {
       e.preventDefault()
