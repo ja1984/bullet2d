@@ -157,6 +157,16 @@ export default class GameServer implements Party.Server {
         break
       }
 
+      case 'player_bullets': {
+        if (msg.bullets && msg.bullets.length > 0) {
+          const outBuf = new Uint8Array(encodePlayerBullets(msg.bullets))
+          for (const [, p] of this.players) {
+            if (p.index !== pi) p.conn.send(outBuf)
+          }
+        }
+        break
+      }
+
       case 'set_nickname': {
         const nickname = (msg.nickname || '').trim().slice(0, 16)
         this.playerNicknames.set(pi, nickname)
