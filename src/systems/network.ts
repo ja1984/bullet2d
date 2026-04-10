@@ -178,6 +178,7 @@ function connectToRoom(room: string) {
   onStatusChange?.(`Connecting to room ${room}...`)
 
   socket = new PartySocket({ host: PARTYKIT_HOST, room })
+  socket.binaryType = 'arraybuffer'
 
   socket.addEventListener('open', () => {
     connected = true

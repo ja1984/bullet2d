@@ -123,12 +123,14 @@ export default class GameServer implements Party.Server {
 
   // ─── Message Handling ───────────────────────────────────────────────────
 
-  onMessage(message: string | ArrayBuffer, sender: Party.Connection) {
+  onMessage(message: string | ArrayBufferLike, sender: Party.Connection) {
     const pi = (sender.state as any)?.playerIndex ?? -1
 
     // Binary messages (high-frequency)
-    if (message instanceof ArrayBuffer || (typeof message === 'object' && !(typeof message === 'string'))) {
-      const buf = message instanceof ArrayBuffer ? message : new Uint8Array(message as any).buffer
+    if (typeof message !== 'string') {
+      const raw = message as any
+      const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw)
+      const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
       this.handleBinaryMessage(buf, pi)
       return
     }
@@ -219,7 +221,7 @@ export default class GameServer implements Party.Server {
         // Re-encode as PLAYER_BULLETS and broadcast to everyone except sender
         const bullets = decodeBullets(buf)
         if (bullets.length > 0) {
-          const outBuf = encodePlayerBullets(bullets)
+          const outBuf = new Uint8Array(encodePlayerBullets(bullets))
           for (const [, p] of this.players) {
             if (p.index !== pi) p.conn.send(outBuf)
           }
@@ -283,7 +285,8 @@ export default class GameServer implements Party.Server {
       const others = allPlayerData.filter((d: { pi: number }) => d.pi !== pi)
       if (others.length > 0) msgs.push(encodePlayerStates(others))
       if (msgs.length > 0) {
-        p.conn.send(msgs.length === 1 ? msgs[0] : encodeFrame(msgs))
+        const out = msgs.length === 1 ? msgs[0] : encodeFrame(msgs)
+        p.conn.send(new Uint8Array(out))
       }
     }
 
@@ -593,8 +596,9 @@ export default class GameServer implements Party.Server {
   }
 
   broadcastBinary(buf: ArrayBuffer) {
+    const bytes = new Uint8Array(buf)
     for (const conn of this.room.getConnections()) {
-      conn.send(buf)
+      conn.send(bytes)
     }
   }
 }
