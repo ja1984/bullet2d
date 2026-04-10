@@ -6,7 +6,7 @@ const LEVEL_W = 2400
 const GROUND_Y = 620
 const WALL_W = 20
 
-function generatePlatforms(wave: number): Rect[] {
+function generatePlatforms(wave: number, playerCount = 1): Rect[] {
   const plats: Rect[] = []
   const hasGaps = wave >= 3 && Math.random() < 0.5
   if (hasGaps) {
@@ -35,12 +35,14 @@ function generatePlatforms(wave: number): Rect[] {
   }
   plats.push({ x: 0, y: 0, w: WALL_W, h: 720 })
   plats.push({ x: LEVEL_W - WALL_W, y: 0, w: WALL_W, h: 720 })
-  const tiers = 2 + Math.min(Math.floor(wave / 2), 2)
-  const tierHeights = [480, 340, 210, 120]
+  const extraTiers = playerCount >= 3 ? 1 : 0
+  const tiers = 2 + Math.min(Math.floor(wave / 2), 2) + extraTiers
+  const tierHeights = [480, 340, 210, 120, 60]
   const usedRects: Rect[] = []
-  for (let t = 0; t < tiers; t++) {
+  for (let t = 0; t < tiers && t < tierHeights.length; t++) {
     const tierY = tierHeights[t] + (Math.random() - 0.5) * 30
-    const platCount = 2 + Math.floor(Math.random() * 2)
+    const extraPlats = Math.floor((playerCount - 1) * 0.5)
+    const platCount = 2 + Math.floor(Math.random() * 2) + extraPlats
     const minGap = 160
     let cursor = 80 + Math.random() * 200
     for (let p = 0; p < platCount && cursor < LEVEL_W - 250; p++) {
@@ -138,7 +140,7 @@ export function generateWeaponPickups(plats: Rect[]): { pos: Vec2; type: WeaponT
   return pickups
 }
 
-export function generateLevel(wave: number): { platforms: Rect[]; spawnPositions: Vec2[] } {
-  const plats = generatePlatforms(wave)
+export function generateLevel(wave: number, playerCount = 1): { platforms: Rect[]; spawnPositions: Vec2[] } {
+  const plats = generatePlatforms(wave, playerCount)
   return { platforms: plats, spawnPositions: generateSpawnPositions(plats) }
 }

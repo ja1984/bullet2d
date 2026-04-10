@@ -493,7 +493,7 @@ export default class GameServer implements Party.Server {
     this.wave++
     // Wave 1 uses the initial level, wave 2+ generates new
     if (this.wave > 1) {
-      const level = generateLevel(this.wave)
+      const level = generateLevel(this.wave, this.players.size)
       this.platforms = level.platforms
       this.spawnPositions = level.spawnPositions
       this.coverBoxes = generateCoverBoxes(this.platforms)
@@ -527,7 +527,7 @@ export default class GameServer implements Party.Server {
     this.lastTick = Date.now()
 
     // Generate initial level
-    const level = generateLevel(1)
+    const level = generateLevel(1, this.players.size)
     this.platforms = level.platforms
     this.spawnPositions = level.spawnPositions
     this.coverBoxes = generateCoverBoxes(this.platforms)
@@ -562,7 +562,7 @@ export default class GameServer implements Party.Server {
     }
 
     // Generate fresh level
-    const level = generateLevel(1)
+    const level = generateLevel(1, this.players.size)
     this.platforms = level.platforms
     this.spawnPositions = level.spawnPositions
     this.coverBoxes = generateCoverBoxes(this.platforms)
