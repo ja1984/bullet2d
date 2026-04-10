@@ -139,8 +139,21 @@ export default class GameServer implements Party.Server {
     try { msg = JSON.parse(message) } catch { return }
 
     switch (msg.type) {
+      // JSON fallbacks for player_state and enemy_damage (in case binary detection fails)
+      case 'player_state': {
+        const p = this.players.get(pi)
+        if (!p) break
+        p.x = msg.x; p.y = msg.y; p.vx = msg.vx; p.vy = msg.vy
+        p.hp = msg.hp; p.facing = msg.f; p.onGround = msg.g === 1
+        p.crouching = msg.c === 1; p.diving = msg.d === 1
+        p.rolling = msg.r === 1; p.bulletTimeActive = msg.bt === 1
+        p.anim = msg.anim; p.animTimer = msg.at
+        p.weapon = msg.w; p.aimAngle = msg.aa
+        break
+      }
+
       case 'enemy_damage': {
-        this.applyEnemyDamage(msg.enemyIdx, msg.damage, msg.headshot)
+        this.applyEnemyDamage(msg.enemyIdx, msg.damage, msg.headshot, pi)
         break
       }
 

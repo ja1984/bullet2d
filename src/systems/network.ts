@@ -519,7 +519,7 @@ export function sendPlayerState() {
   const aimWorldX = state.mouse.x + state.camera.x
   const aimWorldY = state.mouse.y + state.camera.y
   const aimAngle = Math.atan2(aimWorldY - (p.y + p.h / 2), aimWorldX - (p.x + p.w / 2))
-  socket.send(encodeClientPlayerState({
+  socket.send(new Uint8Array(encodeClientPlayerState({
     pi: localPlayerIndex,
     x: Math.round(p.x), y: Math.round(p.y),
     vx: Math.round(p.vx), vy: Math.round(p.vy),
@@ -528,7 +528,7 @@ export function sendPlayerState() {
     dive: p.diving, roll: p.rolling, bt: p.bulletTimeActive,
     anim: state.currentAnim, animTimer: state.animTimer,
     weapon: state.currentWeapon, aimAngle,
-  }))
+  })))
 
   // Flush any queued player bullets
   flushPlayerBullets()
@@ -545,13 +545,13 @@ export function queuePlayerBullet(x: number, y: number, vx: number, vy: number, 
 
 function flushPlayerBullets() {
   if (!socket || !connected || pendingPlayerBullets.length === 0) return
-  socket.send(encodeClientPlayerBullets(pendingPlayerBullets))
+  socket.send(new Uint8Array(encodeClientPlayerBullets(pendingPlayerBullets)))
   pendingPlayerBullets.length = 0
 }
 
 export function sendEnemyDamage(enemyIdx: number, damage: number, headshot: boolean) {
   if (!socket || !connected || !serverAuthoritative) return
-  socket.send(encodeEnemyDamageBin(enemyIdx, damage, headshot))
+  socket.send(new Uint8Array(encodeEnemyDamageBin(enemyIdx, damage, headshot)))
 }
 
 export function sendCoverDestroyed(x: number, y: number, coverType: string, explosive: boolean) {
