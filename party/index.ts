@@ -304,25 +304,18 @@ export default class GameServer implements Party.Server {
     this.updateEnemies(dt)
     this.updateWaveState(dt)
 
-    // Build per-tick binary messages and batch into single frame per client
+    // Send enemy update (broadcast same buffer to all)
     const enemyBuf = this.buildEnemyUpdate()
-    const bulletBuf = this.pendingBullets.length > 0 ? encodeEnemyBullets(this.pendingBullets) : null
-    this.pendingBullets = []
+    if (enemyBuf) this.broadcastBinary(enemyBuf)
 
-    // Build per-player frames (each gets enemy + bullets + other players)
-    const allPlayerData = this.buildAllPlayerData()
-    for (const [pi, p] of this.players) {
-      const msgs: ArrayBuffer[] = []
-      if (enemyBuf) msgs.push(enemyBuf)
-      if (bulletBuf) msgs.push(bulletBuf)
-      // Player states excluding self
-      const others = allPlayerData.filter((d: { pi: number }) => d.pi !== pi)
-      if (others.length > 0) msgs.push(encodePlayerStates(others))
-      if (msgs.length > 0) {
-        const out = msgs.length === 1 ? msgs[0] : encodeFrame(msgs)
-        p.conn.send(new Uint8Array(out))
-      }
+    // Send enemy bullets
+    if (this.pendingBullets.length > 0) {
+      this.broadcastBinary(encodeEnemyBullets(this.pendingBullets))
+      this.pendingBullets = []
     }
+
+    // Send player states (each player gets everyone except themselves)
+    this.broadcastPlayerStates()
 
     // Schedule next tick
     this.room.storage.setAlarm(Date.now() + TICK_MS)
@@ -613,12 +606,17 @@ export default class GameServer implements Party.Server {
     return data.length > 0 ? encodeEnemyUpdate(data) : null
   }
 
-  buildAllPlayerData(): { pi: number; x: number; y: number; vx: number; vy: number; hp: number; facing: number; ground: boolean; crouch: boolean; dive: boolean; roll: boolean; bt: boolean; anim: string; animTimer: number; weapon: string; aimAngle: number }[] {
+  broadcastPlayerStates() {
     const all: { pi: number; x: number; y: number; vx: number; vy: number; hp: number; facing: number; ground: boolean; crouch: boolean; dive: boolean; roll: boolean; bt: boolean; anim: string; animTimer: number; weapon: string; aimAngle: number }[] = []
     for (const [pi, p] of this.players) {
       all.push({ pi, x: p.x, y: p.y, vx: p.vx, vy: p.vy, hp: p.hp, facing: p.facing, ground: p.onGround, crouch: p.crouching, dive: p.diving, roll: p.rolling, bt: p.bulletTimeActive, anim: p.anim, animTimer: p.animTimer, weapon: p.weapon, aimAngle: p.aimAngle })
     }
-    return all
+    for (const [pi, p] of this.players) {
+      const others = all.filter(a => a.pi !== pi)
+      if (others.length > 0) {
+        p.conn.send(new Uint8Array(encodePlayerStates(others)))
+      }
+    }
   }
 
   broadcast(msg: any, excludeId?: string) {
