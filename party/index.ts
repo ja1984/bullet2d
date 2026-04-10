@@ -1,68 +1,502 @@
-// ─── Bullet 2D PartyKit Server ────────────────────────────────────────────────
-// Simple relay: each player sends their state, server forwards it to the other.
+// ─── Bullet 2D PartyKit Server (Authoritative Game Loop) ────────────────────
 
 import type * as Party from "partykit/server"
+import type { ServerEnemy, Rect, Vec2, CoverBox, WeaponType } from "../shared/types"
+import { encodeEnemyUpdate, encodePlayerStates, encodeEnemyBullets, encodeEnemyKilled, encodeEnemyHit } from "../shared/binary"
+import { ENEMY_CONFIGS } from "../shared/constants"
+import { resolvePhysicsShared } from "../shared/physics"
+import { generateLevel, generateCoverBoxes, generateWeaponPickups } from "../shared/levelgen"
+import { spawnWaveEnemies, getDifficultyMult, createEnemy } from "../shared/waves"
 
-export default class GameRelay implements Party.Server {
+const TICK_MS = 33 // ~30fps
+const MAX_PLAYERS = 20
+
+interface PlayerRecord {
+  conn: Party.Connection
+  index: number
+  x: number; y: number; w: number; h: number
+  vx: number; vy: number; hp: number; facing: number
+  onGround: boolean; crouching: boolean; diving: boolean
+  rolling: boolean; bulletTimeActive: boolean
+  anim: string; animTimer: number; weapon: string; aimAngle: number
+}
+
+interface WeaponPickupRecord {
+  x: number; y: number; w: number; h: number
+  type: WeaponType; collected: boolean
+}
+
+export default class GameServer implements Party.Server {
+  // Players
+  players: Map<number, PlayerRecord> = new Map()
+  nextIndex = 0
+
+  // Game world
+  enemies: ServerEnemy[] = []
+  platforms: Rect[] = []
+  spawnPositions: Vec2[] = []
+  coverBoxes: CoverBox[] = []
+  weaponPickups: WeaponPickupRecord[] = []
+
+  // Wave state
+  wave = 0
+  waveState: 'countdown' | 'active' | 'cleared' = 'countdown'
+  waveTimer = 3
+  gameTime = 0
+  reinforcementsSent = false
+
+  // Bullet tracking for enemy spawned bullets
+  pendingBullets: { x: number; y: number; vx: number; vy: number; o: string; d: number; p: number }[] = []
+
+  // Game running
+  running = false
+  paused = false
+  lastTick = 0
+
   constructor(readonly room: Party.Room) {}
 
-  nextIndex = 0
+  // ─── Connection Management ──────────────────────────────────────────────
 
   onConnect(conn: Party.Connection) {
     const count = [...this.room.getConnections()].length
-    if (count > 4) {
+    if (count > MAX_PLAYERS) {
       conn.send(JSON.stringify({ type: 'error', message: 'Room is full' }))
       conn.close()
       return
     }
+
     const playerIndex = this.nextIndex++
     conn.setState({ playerIndex })
-    conn.send(JSON.stringify({ type: 'welcome', playerIndex, roomCode: this.room.id }))
+
+    const player: PlayerRecord = {
+      conn, index: playerIndex,
+      x: 100 + playerIndex * 50, y: 500, w: 24, h: 44,
+      vx: 0, vy: 0, hp: 100, facing: 1,
+      onGround: false, crouching: false, diving: false,
+      rolling: false, bulletTimeActive: false,
+      anim: 'idle', animTimer: 0, weapon: 'pistol', aimAngle: 0,
+    }
+    this.players.set(playerIndex, player)
+
+    // Send welcome with current player count
+    conn.send(JSON.stringify({
+      type: 'welcome', playerIndex, roomCode: this.room.id,
+      playerCount: this.players.size,
+    }))
 
     // Tell new player about existing players
-    for (const other of this.room.getConnections()) {
-      if (other.id !== conn.id) {
-        const otherIndex = (other.state as any)?.playerIndex ?? -1
-        conn.send(JSON.stringify({ type: 'player_joined', playerIndex: otherIndex }))
+    for (const [existingPi] of this.players) {
+      if (existingPi !== playerIndex) {
+        conn.send(JSON.stringify({ type: 'player_joined', playerIndex: existingPi }))
       }
     }
 
-    // Notify existing players about the new player
-    for (const other of this.room.getConnections()) {
-      if (other.id !== conn.id) {
-        other.send(JSON.stringify({ type: 'player_joined', playerIndex }))
-      }
+    // Notify existing players about new player
+    this.broadcast({ type: 'player_joined', playerIndex }, conn.id)
+
+    // If game is already running, send current state to late joiner
+    if (this.running) {
+      conn.send(JSON.stringify(this.buildGameState()))
     }
-  }
 
-  onMessage(message: string, sender: Party.Connection) {
-    // Support targeted messages — only send to a specific player
-    try {
-      const parsed = JSON.parse(message)
-      if (parsed._target != null) {
-        for (const conn of this.room.getConnections()) {
-          if ((conn.state as any)?.playerIndex === parsed._target) {
-            conn.send(message)
-          }
-        }
-        return
-      }
-    } catch {}
-
-    // Default: relay to all OTHER connections
-    for (const conn of this.room.getConnections()) {
-      if (conn.id !== sender.id) {
-        conn.send(message)
-      }
+    // Start game loop when 2+ players
+    if (this.players.size >= 2 && !this.running) {
+      this.startGame()
     }
   }
 
   onClose(conn: Party.Connection) {
     const pi = (conn.state as any)?.playerIndex ?? -1
-    for (const other of this.room.getConnections()) {
-      if (other.id !== conn.id) {
-        other.send(JSON.stringify({ type: 'player_left', playerIndex: pi }))
+    this.players.delete(pi)
+    this.broadcast({ type: 'player_left', playerIndex: pi })
+
+    if (this.players.size < 2) {
+      this.running = false
+    }
+  }
+
+  // ─── Message Handling ───────────────────────────────────────────────────
+
+  onMessage(message: string, sender: Party.Connection) {
+    let msg: any
+    try { msg = JSON.parse(message) } catch { return }
+    const pi = (sender.state as any)?.playerIndex ?? -1
+
+    switch (msg.type) {
+      case 'player_state': {
+        const p = this.players.get(pi)
+        if (!p) break
+        p.x = msg.x; p.y = msg.y; p.vx = msg.vx; p.vy = msg.vy
+        p.hp = msg.hp; p.facing = msg.f; p.onGround = msg.g === 1
+        p.crouching = msg.c === 1; p.diving = msg.d === 1
+        p.rolling = msg.r === 1; p.bulletTimeActive = msg.bt === 1
+        p.anim = msg.anim; p.animTimer = msg.at
+        p.weapon = msg.w; p.aimAngle = msg.aa
+        break
       }
+
+      case 'enemy_damage': {
+        const e = this.enemies[msg.enemyIdx]
+        if (!e || e.state === 'dead') break
+        const dmg = msg.headshot ? e.maxHp : Math.min(msg.damage, e.hp)
+        e.hp -= dmg
+        e.hitTimer = 0.3
+        if (e.hp <= 0) {
+          e.state = 'dead'
+          e.deathTimer = 3
+          this.broadcastBinary(encodeEnemyKilled(msg.enemyIdx))
+        } else {
+          this.broadcastBinary(encodeEnemyHit(msg.enemyIdx, e.hp))
+        }
+        break
+      }
+
+      case 'pause': {
+        this.paused = msg.paused
+        this.broadcast({ type: 'pause', paused: msg.paused })
+        break
+      }
+
+      case 'request_restart': {
+        this.restartGame()
+        break
+      }
+    }
+  }
+
+  // ─── Game Loop (onAlarm) ────────────────────────────────────────────────
+
+  async onAlarm() {
+    if (!this.running || this.paused) {
+      // Keep alarm alive even when paused
+      if (this.running) this.room.storage.setAlarm(Date.now() + TICK_MS)
+      return
+    }
+
+    const now = Date.now()
+    const dt = Math.min((now - this.lastTick) / 1000, 0.05)
+    this.lastTick = now
+    this.gameTime += dt
+
+    // Run game tick
+    this.updateEnemies(dt)
+    this.updateWaveState(dt)
+
+    // Broadcast enemy positions (~30fps)
+    this.broadcastEnemyUpdate()
+
+    // Broadcast any new enemy bullets (binary)
+    if (this.pendingBullets.length > 0) {
+      this.broadcastBinary(encodeEnemyBullets(this.pendingBullets))
+      this.pendingBullets = []
+    }
+
+    // Broadcast all player states to each other
+    this.broadcastPlayerStates()
+
+    // Schedule next tick
+    this.room.storage.setAlarm(Date.now() + TICK_MS)
+  }
+
+  // ─── Enemy AI ───────────────────────────────────────────────────────────
+
+  updateEnemies(dt: number) {
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i]
+      if (e.hitTimer > 0) e.hitTimer -= dt
+
+      if (e.state === 'dead') {
+        e.deathTimer -= dt
+        continue
+      }
+
+      // Kill if fallen out of map
+      if (e.y > 800) {
+        e.state = 'dead'
+        e.deathTimer = 0.1
+        this.broadcastBinary(encodeEnemyKilled(i))
+        continue
+      }
+
+      const cfg = ENEMY_CONFIGS[e.behavior]
+
+      // Find closest alive player
+      let targetX = 0, targetY = 0, targetW = 24, targetH = 44
+      let hasTarget = false
+      let closestDist = Infinity
+      for (const [, p] of this.players) {
+        if (p.hp <= 0) continue
+        const d = Math.abs(p.x - e.x) + Math.abs(p.y - e.y)
+        if (d < closestDist) {
+          closestDist = d
+          targetX = p.x; targetY = p.y; targetW = p.w; targetH = p.h
+          hasTarget = true
+        }
+      }
+
+      const dx = targetX - e.x
+      const dy = targetY - e.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+
+      if (!hasTarget) {
+        if (e.state === 'alert') { e.alertTimer -= dt; if (e.alertTimer <= 0) e.state = 'idle' }
+      } else if (dist < cfg.sightRange) {
+        e.state = 'alert'
+        e.alertTimer = 3
+        e.facing = dx > 0 ? 1 : -1
+      } else if (e.state === 'alert') {
+        e.alertTimer -= dt
+        if (e.alertTimer <= 0) e.state = 'idle'
+      }
+
+      if (e.state === 'idle') {
+        e.patrolTimer -= dt
+        if (e.patrolTimer <= 0) {
+          e.patrolDir *= -1
+          e.patrolTimer = 2 + Math.random() * 3
+        }
+        if (e.behavior === 'drone') {
+          e.vx = e.patrolDir * cfg.speed
+          e.vy = Math.sin(this.gameTime * 3 + e.x) * 30
+        } else {
+          e.vx = e.patrolDir * cfg.speed
+          e.facing = e.patrolDir
+        }
+      } else if (e.state === 'alert') {
+        if (e.behavior === 'drone') {
+          e.vx = (dx > 0 ? 1 : -1) * cfg.speed
+          e.vy = ((targetY - 80) - e.y) * 2
+        } else if (e.behavior === 'rusher') {
+          e.vx = (dx > 0 ? 1 : -1) * cfg.speed
+        } else if (e.behavior === 'sniper') {
+          e.vx = dist < 300 ? (dx > 0 ? -1 : 1) * cfg.speed : 0
+        } else {
+          e.vx = (e.hitTimer > 0 && e.hp < e.maxHp * 0.5) ? (dx > 0 ? -1 : 1) * cfg.speed * 1.5 : 0
+        }
+
+        // Shooting
+        e.shootTimer -= dt
+        if (e.shootTimer <= 0 && hasTarget) {
+          e.shootTimer = (cfg.shootInterval / getDifficultyMult(this.wave)) * (0.8 + Math.random() * 0.4)
+          const angle = Math.atan2(
+            (targetY + targetH / 2) - (e.y + e.h / 2),
+            (targetX + targetW / 2) - (e.x + e.w / 2)
+          )
+          for (let p = 0; p < cfg.pellets; p++) {
+            const spreadAngle = angle + (Math.random() - 0.5) * cfg.spread * 2
+            this.pendingBullets.push({
+              x: Math.round(e.x + e.w / 2 + Math.cos(angle) * 16),
+              y: Math.round(e.y + e.h / 2 - 4 + Math.sin(angle) * 16),
+              vx: Math.round(Math.cos(spreadAngle) * cfg.bulletSpeed),
+              vy: Math.round(Math.sin(spreadAngle) * cfg.bulletSpeed),
+              o: 'enemy', d: cfg.damage, p: 0,
+            })
+          }
+        }
+      }
+
+      // Physics
+      if (e.behavior === 'drone') {
+        e.x += e.vx * dt
+        e.y += e.vy * dt
+        e.x = Math.max(20, Math.min(e.x, 2380 - e.w))
+        e.y = Math.max(50, Math.min(e.y, 580))
+      } else {
+        resolvePhysicsShared(e, dt, this.platforms, this.coverBoxes)
+      }
+    }
+  }
+
+  // ─── Wave State Machine ─────────────────────────────────────────────────
+
+  updateWaveState(dt: number) {
+    if (this.waveState === 'countdown') {
+      this.waveTimer -= dt
+      if (this.waveTimer <= 0) {
+        this.startWave()
+      }
+    } else if (this.waveState === 'active') {
+      const alive = this.enemies.filter(e => e.state !== 'dead').length
+
+      // Reinforcements on wave 6+
+      if (this.wave >= 6 && alive > 0 && alive <= Math.floor(this.enemies.length / 2)) {
+        if (!this.reinforcementsSent) {
+          this.reinforcementsSent = true
+          const behaviors = ['grunt', 'rusher', 'drone'] as const
+          const count = 1 + Math.floor(this.wave / 4)
+          for (let r = 0; r < count; r++) {
+            const rx = 200 + Math.random() * 2000
+            const behavior = behaviors[Math.floor(Math.random() * behaviors.length)]
+            this.enemies.push(createEnemy(rx, behavior === 'drone' ? 50 : -50, behavior, this.wave))
+          }
+        }
+      }
+
+      if (alive === 0) {
+        this.waveState = 'cleared'
+        this.waveTimer = 4
+        this.broadcast({ type: 'wave_cleared' })
+      }
+    } else if (this.waveState === 'cleared') {
+      this.waveTimer -= dt
+      if (this.waveTimer <= 0) {
+        this.enemies = []
+        this.waveState = 'countdown'
+        this.waveTimer = 3
+        this.broadcast({ type: 'wave_countdown', wave: this.wave + 1, timer: 3 })
+      }
+    }
+  }
+
+  startWave() {
+    this.wave++
+    // Wave 1 uses the initial level, wave 2+ generates new
+    if (this.wave > 1) {
+      const level = generateLevel(this.wave)
+      this.platforms = level.platforms
+      this.spawnPositions = level.spawnPositions
+      this.coverBoxes = generateCoverBoxes(this.platforms)
+      this.weaponPickups = generateWeaponPickups(this.platforms).map(p => ({
+        x: p.pos.x, y: p.pos.y, w: 20, h: 14, type: p.type, collected: false,
+      }))
+    }
+    this.enemies = spawnWaveEnemies(this.wave, this.spawnPositions)
+    this.waveState = 'active'
+    this.reinforcementsSent = false
+
+    this.broadcast({
+      type: 'wave_start',
+      wave: this.wave,
+      platforms: this.platforms,
+      spawnPositions: this.spawnPositions,
+      coverBoxes: this.coverBoxes,
+      weaponPickups: this.weaponPickups,
+      enemies: this.enemies,
+    })
+  }
+
+  // ─── Game Lifecycle ─────────────────────────────────────────────────────
+
+  startGame() {
+    this.wave = 0
+    this.waveState = 'countdown'
+    this.waveTimer = 3
+    this.gameTime = 0
+    this.running = true
+    this.paused = false
+    this.lastTick = Date.now()
+
+    // Generate initial level
+    const level = generateLevel(1)
+    this.platforms = level.platforms
+    this.spawnPositions = level.spawnPositions
+    this.coverBoxes = generateCoverBoxes(this.platforms)
+    this.weaponPickups = generateWeaponPickups(this.platforms).map(p => ({
+      x: p.pos.x, y: p.pos.y, w: 20, h: 14, type: p.type, collected: false,
+    }))
+
+    // Send initial game state to all
+    const gs = this.buildGameState()
+    for (const [, p] of this.players) {
+      p.conn.send(JSON.stringify(gs))
+    }
+
+    // Start tick loop
+    this.room.storage.setAlarm(Date.now() + TICK_MS)
+  }
+
+  restartGame() {
+    this.enemies = []
+    this.wave = 0
+    this.waveState = 'countdown'
+    this.waveTimer = 3
+    this.gameTime = 0
+    this.paused = false
+    this.reinforcementsSent = false
+
+    // Reset all player HP
+    for (const [, p] of this.players) {
+      p.hp = 100
+      p.x = 100 + p.index * 50
+      p.y = 500
+    }
+
+    // Generate fresh level
+    const level = generateLevel(1)
+    this.platforms = level.platforms
+    this.spawnPositions = level.spawnPositions
+    this.coverBoxes = generateCoverBoxes(this.platforms)
+    this.weaponPickups = generateWeaponPickups(this.platforms).map(p => ({
+      x: p.pos.x, y: p.pos.y, w: 20, h: 14, type: p.type, collected: false,
+    }))
+
+    this.broadcast({
+      type: 'game_restart',
+      platforms: this.platforms,
+      spawnPositions: this.spawnPositions,
+      coverBoxes: this.coverBoxes,
+      weaponPickups: this.weaponPickups,
+      enemies: [],
+    })
+
+    if (!this.running) {
+      this.running = true
+      this.lastTick = Date.now()
+      this.room.storage.setAlarm(Date.now() + TICK_MS)
+    }
+  }
+
+  // ─── Broadcasting ───────────────────────────────────────────────────────
+
+  buildGameState() {
+    return {
+      type: 'game_state',
+      wave: this.wave,
+      waveState: this.waveState,
+      platforms: this.platforms,
+      spawnPositions: this.spawnPositions,
+      coverBoxes: this.coverBoxes,
+      weaponPickups: this.weaponPickups,
+      enemies: this.enemies.filter(e => e.state !== 'dead'),
+    }
+  }
+
+  broadcastEnemyUpdate() {
+    const data: { i: number; x: number; y: number; vx: number; vy: number; facing: number; hp: number; alert: boolean }[] = []
+    for (let i = 0; i < this.enemies.length; i++) {
+      const en = this.enemies[i]
+      if (en.state === 'dead') continue
+      data.push({ i, x: Math.round(en.x), y: Math.round(en.y), vx: Math.round(en.vx), vy: Math.round(en.vy), facing: en.facing, hp: en.hp, alert: en.state === 'alert' })
+    }
+    if (data.length > 0) {
+      this.broadcastBinary(encodeEnemyUpdate(data))
+    }
+  }
+
+  broadcastPlayerStates() {
+    const all: { pi: number; x: number; y: number; vx: number; vy: number; hp: number; facing: number; ground: boolean; crouch: boolean; dive: boolean; roll: boolean; bt: boolean; anim: string; animTimer: number; weapon: string; aimAngle: number }[] = []
+    for (const [pi, p] of this.players) {
+      all.push({ pi, x: p.x, y: p.y, vx: p.vx, vy: p.vy, hp: p.hp, facing: p.facing, ground: p.onGround, crouch: p.crouching, dive: p.diving, roll: p.rolling, bt: p.bulletTimeActive, anim: p.anim, animTimer: p.animTimer, weapon: p.weapon, aimAngle: p.aimAngle })
+    }
+    for (const [pi, p] of this.players) {
+      const others = all.filter(a => a.pi !== pi)
+      if (others.length > 0) {
+        p.conn.send(encodePlayerStates(others))
+      }
+    }
+  }
+
+  broadcast(msg: any, excludeId?: string) {
+    const data = JSON.stringify(msg)
+    for (const conn of this.room.getConnections()) {
+      if (excludeId && conn.id === excludeId) continue
+      conn.send(data)
+    }
+  }
+
+  broadcastBinary(buf: ArrayBuffer) {
+    for (const conn of this.room.getConnections()) {
+      conn.send(buf)
     }
   }
 }

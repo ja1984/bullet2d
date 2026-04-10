@@ -6,6 +6,7 @@ import { state, saveScore, checkAllPlayersDead } from '../state'
 import { SFX } from '../audio'
 import { spawnParticles, spawnExplosionLight } from './particles'
 import { enemyTypes } from '../sprites/enemySprites'
+import { isServerAuthoritative, sendEnemyDamage } from './network'
 
 export function updateBullets(gameDt: number) {
   const { bullets, coverBoxes, enemies, player, floatingTexts, bloodDecals, ammoPickups } = state
@@ -171,7 +172,14 @@ export function updateBullets(gameDt: number) {
         }
 
         const finalDamage = b.damage * dmgMultiplier
-        e.hp -= finalDamage
+        const enemyIdx = enemies.indexOf(e)
+
+        if (isServerAuthoritative()) {
+          // Send damage to server — server is authoritative on HP
+          sendEnemyDamage(enemyIdx, finalDamage, hitZone === 'head')
+        } else {
+          e.hp -= finalDamage
+        }
         e.hitTimer = 0.3
         e.showHpTimer = 2
 
@@ -206,7 +214,7 @@ export function updateBullets(gameDt: number) {
 
         if (bloodDecals.length > 100) bloodDecals.shift()
 
-        if (e.hp <= 0) {
+        if (e.hp <= 0 && !isServerAuthoritative()) {
           e.state = 'dead'
           state.hitPauseTimer = 0.05
           if (hitZone !== 'head') SFX.enemyDeath(e.type)

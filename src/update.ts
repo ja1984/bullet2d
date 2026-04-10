@@ -20,7 +20,7 @@ import { startWave, getDifficultyMult, spawnEnemy } from './systems/waves'
 import { updateAmbient, spawnAmbientObjects } from './systems/ambient'
 import type { EnemyBehavior } from './types'
 import { updateCamera } from './systems/camera'
-import { sendPlayerState, updateRemotePlayer, syncGameEvents, isOnline, isHost, queueBulletSync, sendRestart } from './systems/network'
+import { sendPlayerState, updateRemotePlayer, syncGameEvents, isOnline, isHost, isServerAuthoritative, queueBulletSync, sendRestart } from './systems/network'
 import { restart } from './main'
 
 export function update(dt: number) {
@@ -454,19 +454,19 @@ export function update(dt: number) {
   } // close player alive check
 
   // ── Enemies ──
-  const guestOnline = isOnline() && !isHost()
+  const serverAuth = isServerAuthoritative()
   for (const e of state.enemies) {
     e.animTimer += gameDt
     if (e.hitTimer > 0) e.hitTimer -= gameDt
 
     if (e.state === 'dead') {
       e.deathTimer -= gameDt
-      if (!guestOnline) resolvePhysics(e, gameDt)
+      if (!serverAuth) resolvePhysics(e, gameDt)
       continue
     }
 
-    // Guest: skip AI, positions come from host via enemy_sync
-    if (guestOnline) continue
+    // Server-authoritative: skip all AI, positions come from server
+    if (serverAuth) continue
 
     // Kill enemy if fallen out of map
     if (e.y > 800) {
@@ -945,55 +945,53 @@ export function update(dt: number) {
   // ── Camera ──
   updateCamera(dt)
 
-  // Wave system
-  if (state.waveState === 'countdown') {
-    state.waveTimer -= dt
-    if (state.waveTimer <= 0) {
-      startWave()
-    }
-  } else if (state.waveState === 'active') {
-    const alive = state.enemies.filter(e => e.state !== 'dead').length
-
-    // Reinforcement drops — on wave 6+ when half enemies are dead
-    if (state.wave >= 6 && alive > 0 && alive <= Math.floor(state.waveEnemiesAlive / 2)) {
-      if (!state.reinforcementsSent) {
-        state.reinforcementsSent = true
-        const reinforceCount = 1 + Math.floor(state.wave / 4)
-        const behaviors: EnemyBehavior[] = ['grunt', 'rusher', 'drone']
-        for (let r = 0; r < reinforceCount; r++) {
-          const rx = 200 + Math.random() * 2000
-          const behavior = behaviors[Math.floor(Math.random() * behaviors.length)]
-          // Spawn high up — they'll fall in
-          spawnEnemy(rx, behavior === 'drone' ? 50 : -50, behavior)
-        }
-        state.killFeed.push({ text: 'REINFORCEMENTS!', color: '#ff4466', life: 2.5, maxLife: 2.5 })
+  // Wave system — server handles this when online
+  if (!serverAuth) {
+    if (state.waveState === 'countdown') {
+      state.waveTimer -= dt
+      if (state.waveTimer <= 0) {
+        startWave()
       }
-    }
+    } else if (state.waveState === 'active') {
+      const alive = state.enemies.filter(e => e.state !== 'dead').length
 
-    if (alive === 0) {
-      state.waveState = 'cleared'
-      SFX.waveCleared()
-      state.waveTimer = 4 // time to show score screen
-      // Score: base kills + combo bonus + wave bonus
-      state.totalScore += Math.round((state.killCount * 10 + state.wave * 50) * state.scoreMultiplier)
-      // Respawn weapon pickups
-      for (const wp of state.weaponPickups) wp.collected = false
-      // Heal player slightly between waves
-      player.hp = Math.min(PLAYER_MAX_HP, player.hp + 15)
-    }
-  } else if (state.waveState === 'cleared') {
-    state.waveTimer -= dt
-    // Auto-disable bullet time shortly after wave clear
-    if (state.waveTimer <= 3.5 && state.bulletTimeToggled) {
-      state.bulletTimeToggled = false
-      player.bulletTimeActive = false
-    }
-    if (state.waveTimer <= 0) {
-      state.enemies.length = 0
-      state.bloodDecals.length = 0
-      spawnAmbientObjects()
-      state.waveState = 'countdown'
-      state.waveTimer = 3
+      // Reinforcement drops — on wave 6+ when half enemies are dead
+      if (state.wave >= 6 && alive > 0 && alive <= Math.floor(state.waveEnemiesAlive / 2)) {
+        if (!state.reinforcementsSent) {
+          state.reinforcementsSent = true
+          const reinforceCount = 1 + Math.floor(state.wave / 4)
+          const behaviors: EnemyBehavior[] = ['grunt', 'rusher', 'drone']
+          for (let r = 0; r < reinforceCount; r++) {
+            const rx = 200 + Math.random() * 2000
+            const behavior = behaviors[Math.floor(Math.random() * behaviors.length)]
+            // Spawn high up — they'll fall in
+            spawnEnemy(rx, behavior === 'drone' ? 50 : -50, behavior)
+          }
+          state.killFeed.push({ text: 'REINFORCEMENTS!', color: '#ff4466', life: 2.5, maxLife: 2.5 })
+        }
+      }
+
+      if (alive === 0) {
+        state.waveState = 'cleared'
+        SFX.waveCleared()
+        state.waveTimer = 4
+        state.totalScore += Math.round((state.killCount * 10 + state.wave * 50) * state.scoreMultiplier)
+        for (const wp of state.weaponPickups) wp.collected = false
+        player.hp = Math.min(PLAYER_MAX_HP, player.hp + 15)
+      }
+    } else if (state.waveState === 'cleared') {
+      state.waveTimer -= dt
+      if (state.waveTimer <= 3.5 && state.bulletTimeToggled) {
+        state.bulletTimeToggled = false
+        player.bulletTimeActive = false
+      }
+      if (state.waveTimer <= 0) {
+        state.enemies.length = 0
+        state.bloodDecals.length = 0
+        spawnAmbientObjects()
+        state.waveState = 'countdown'
+        state.waveTimer = 3
+      }
     }
   }
 
