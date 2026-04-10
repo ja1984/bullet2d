@@ -76,7 +76,7 @@ export default class GameServer implements Party.Server {
   onConnect(conn: Party.Connection) {
     const count = [...this.room.getConnections()].length
     if (count > MAX_PLAYERS) {
-      conn.send(JSON.stringify({ type: 'error', message: 'Room is full' }))
+      conn.send(JSON.stringify(["er", "Room is full"]))
       conn.close()
       return
     }
@@ -95,20 +95,17 @@ export default class GameServer implements Party.Server {
     this.players.set(playerIndex, player)
 
     // Send welcome with current player count
-    conn.send(JSON.stringify({
-      type: 'welcome', playerIndex, roomCode: this.room.id,
-      playerCount: this.players.size,
-    }))
+    conn.send(JSON.stringify(["wl", [playerIndex, this.room.id, this.players.size]]))
 
     // Tell new player about existing players (with nicknames)
     for (const [existingPi] of this.players) {
       if (existingPi !== playerIndex) {
-        conn.send(JSON.stringify({ type: 'player_joined', playerIndex: existingPi, nickname: this.playerNicknames.get(existingPi) || '' }))
+        conn.send(JSON.stringify(["pj", [existingPi, this.playerNicknames.get(existingPi) || '']]))
       }
     }
 
     // Notify existing players about new player
-    this.broadcast({ type: 'player_joined', playerIndex, nickname: '' }, conn.id)
+    this.broadcast(["pj", [playerIndex, '']], conn.id)
 
     // If game is already running, send current state to late joiner
     if (this.running) {
@@ -125,7 +122,7 @@ export default class GameServer implements Party.Server {
     const pi = (conn.state as any)?.playerIndex ?? -1
     this.players.delete(pi)
     this.playerNicknames.delete(pi)
-    this.broadcast({ type: 'player_left', playerIndex: pi })
+    this.broadcast(["pl", pi])
 
     if (this.players.size < 2) {
       this.running = false
@@ -146,83 +143,97 @@ export default class GameServer implements Party.Server {
       return
     }
 
+    // All client messages use array format: [type, data]
     let msg: any
     try { msg = JSON.parse(message) } catch { return }
 
-    switch (msg.type) {
-      // JSON fallbacks for player_state and enemy_damage (in case binary detection fails)
-      case 'player_state': {
+    const msgType = Array.isArray(msg) ? msg[0] : msg.type
+    const d = Array.isArray(msg) ? msg[1] : null
+
+    switch (msgType) {
+      // Player state: [x, y, vx, vy, hp, f, g, c, d, r, bt, anim, at, w, aa]
+      case 'ps': {
+        if (!d) break
         const p = this.players.get(pi)
         if (!p) break
-        p.x = msg.x; p.y = msg.y; p.vx = msg.vx; p.vy = msg.vy
-        p.hp = msg.hp; p.facing = msg.f; p.onGround = msg.g === 1
-        p.crouching = msg.c === 1; p.diving = msg.d === 1
-        p.rolling = msg.r === 1; p.bulletTimeActive = msg.bt === 1
-        p.anim = msg.anim; p.animTimer = msg.at
-        p.weapon = msg.w; p.aimAngle = msg.aa
+        p.x = d[0]; p.y = d[1]; p.vx = d[2]; p.vy = d[3]
+        p.hp = d[4]; p.facing = d[5]; p.onGround = d[6] === 1
+        p.crouching = d[7] === 1; p.diving = d[8] === 1
+        p.rolling = d[9] === 1; p.bulletTimeActive = d[10] === 1
+        p.anim = d[11]; p.animTimer = d[12]
+        p.weapon = d[13]; p.aimAngle = d[14]
         break
       }
 
-      case 'enemy_damage': {
-        this.applyEnemyDamage(msg.enemyIdx, msg.damage, msg.headshot, pi)
+      // Enemy damage: [enemyIdx, damage, headshot]
+      case 'ed': {
+        if (!d) break
+        this.applyEnemyDamage(d[0], d[1], d[2] === 1, pi)
         break
       }
 
-      case 'player_bullets': {
-        if (msg.bullets && msg.bullets.length > 0) {
-          const outBuf = new Uint8Array(encodePlayerBullets(msg.bullets))
-          for (const [, p] of this.players) {
-            if (p.index !== pi) p.conn.send(outBuf)
-          }
+      // Player bullets: [[x, y, vx, vy, d], ...]
+      case 'pb': {
+        if (!d || d.length === 0) break
+        const bullets = d.map((b: number[]) => ({ x: b[0], y: b[1], vx: b[2], vy: b[3], d: b[4] }))
+        const outBuf = new Uint8Array(encodePlayerBullets(bullets))
+        for (const [, p] of this.players) {
+          if (p.index !== pi) p.conn.send(outBuf)
         }
         break
       }
 
-      case 'set_nickname': {
-        const nickname = (msg.nickname || '').trim().slice(0, 16)
+      // Set nickname: string
+      case 'nn': {
+        const nickname = (String(d) || '').trim().slice(0, 16)
         this.playerNicknames.set(pi, nickname)
-        this.broadcast({ type: 'nickname_update', playerIndex: pi, nickname })
+        this.broadcast(["nu", [pi, nickname]])
         break
       }
 
-      case 'cover_destroyed': {
-        // Client reports cover box destroyed — broadcast to all
-        this.broadcast({ type: 'cover_destroyed', x: msg.x, y: msg.y, coverType: msg.coverType, explosive: msg.explosive })
-        // Remove from server state
+      // Cover destroyed: [x, y, coverType, explosive]
+      case 'cd': {
+        if (!d) break
+        this.broadcast(["cd", [d[0], d[1], d[2], d[3]]])
         for (let i = this.coverBoxes.length - 1; i >= 0; i--) {
-          if (Math.abs(this.coverBoxes[i].x - msg.x) < 2 && Math.abs(this.coverBoxes[i].y - msg.y) < 2) {
+          if (Math.abs(this.coverBoxes[i].x - d[0]) < 2 && Math.abs(this.coverBoxes[i].y - d[1]) < 2) {
             this.coverBoxes.splice(i, 1); break
           }
         }
         break
       }
 
-      case 'platform_destroyed': {
-        this.broadcast({ type: 'platform_destroyed', x: msg.x, y: msg.y, w: msg.w, h: msg.h })
+      // Platform destroyed: [x, y, w, h]
+      case 'pd': {
+        if (!d) break
+        this.broadcast(["pd", [d[0], d[1], d[2], d[3]]])
         for (let i = this.platforms.length - 1; i >= 0; i--) {
           const p = this.platforms[i]
-          if (p.destructible && Math.abs(p.x - msg.x) < 2 && Math.abs(p.y - msg.y) < 2) {
+          if (p.destructible && Math.abs(p.x - d[0]) < 2 && Math.abs(p.y - d[1]) < 2) {
             this.platforms.splice(i, 1); break
           }
         }
         break
       }
 
-      case 'weapon_collected': {
-        if (msg.index >= 0 && msg.index < this.weaponPickups.length) {
-          this.weaponPickups[msg.index].collected = true
-          this.broadcast({ type: 'weapon_collected', index: msg.index })
+      // Weapon collected: index
+      case 'wc': {
+        if (d >= 0 && d < this.weaponPickups.length) {
+          this.weaponPickups[d].collected = true
+          this.broadcast(["wc", d])
         }
         break
       }
 
-      case 'pause': {
-        this.paused = msg.paused
-        this.broadcast({ type: 'pause', paused: msg.paused })
+      // Pause: 1/0
+      case 'pa': {
+        this.paused = d === 1
+        this.broadcast(["pa", d])
         break
       }
 
-      case 'request_restart': {
+      // Request restart
+      case 'rr': {
         this.restartGame()
         break
       }
@@ -279,7 +290,7 @@ export default class GameServer implements Party.Server {
         const dropTypes = ['shotgun', 'm16', 'sniper', 'grenades'] as const
         const dropType = dropTypes[Math.floor(Math.random() * dropTypes.length)]
         const amounts: Record<string, number> = { shotgun: 4, m16: 15, sniper: 3, grenades: 2 }
-        this.broadcast({ type: 'ammo_drop', x: Math.round(e.x + e.w / 2), y: Math.round(e.y), weaponType: dropType, amount: amounts[dropType] })
+        this.broadcast(["ad", [Math.round(e.x + e.w / 2), Math.round(e.y), dropType, amounts[dropType]]])
       }
     } else {
       this.broadcastBinary(encodeEnemyHit(enemyIdx, e.hp))
@@ -299,6 +310,9 @@ export default class GameServer implements Party.Server {
     const dt = Math.min((now - this.lastTick) / 1000, 0.05)
     this.lastTick = now
     this.gameTime += dt
+
+    // Check if all players are dead
+    if (this.checkAllPlayersDead()) return
 
     // Run game tick
     this.updateEnemies(dt)
@@ -455,14 +469,14 @@ export default class GameServer implements Party.Server {
             this.enemies.push(enemy)
             newEnemies.push(enemy)
           }
-          this.broadcast({ type: 'reinforcements', enemies: newEnemies })
+          this.broadcast(["rf", newEnemies])
         }
       }
 
       if (alive === 0) {
         this.waveState = 'cleared'
         this.waveTimer = 4
-        this.broadcast({ type: 'wave_cleared' })
+        this.broadcast(["wv", "c"])
       }
     } else if (this.waveState === 'cleared') {
       this.waveTimer -= dt
@@ -470,7 +484,7 @@ export default class GameServer implements Party.Server {
         this.enemies = []
         this.waveState = 'countdown'
         this.waveTimer = 3
-        this.broadcast({ type: 'wave_countdown', wave: this.wave + 1, timer: 3 })
+        this.broadcast(["wv", [this.wave + 1, 3]])
       }
     }
   }
@@ -491,15 +505,14 @@ export default class GameServer implements Party.Server {
     this.waveState = 'active'
     this.reinforcementsSent = false
 
-    this.broadcast({
-      type: 'wave_start',
+    this.broadcast(["ws", {
       wave: this.wave,
       platforms: this.platforms,
       spawnPositions: this.spawnPositions,
       coverBoxes: this.coverBoxes,
       weaponPickups: this.weaponPickups,
       enemies: this.enemies,
-    })
+    }])
   }
 
   // ─── Game Lifecycle ─────────────────────────────────────────────────────
@@ -557,14 +570,13 @@ export default class GameServer implements Party.Server {
       x: p.pos.x, y: p.pos.y, w: 20, h: 14, type: p.type, collected: false,
     }))
 
-    this.broadcast({
-      type: 'game_restart',
+    this.broadcast(["gr", {
       platforms: this.platforms,
       spawnPositions: this.spawnPositions,
       coverBoxes: this.coverBoxes,
       weaponPickups: this.weaponPickups,
       enemies: [],
-    })
+    }])
 
     if (!this.running) {
       this.running = true
@@ -573,11 +585,19 @@ export default class GameServer implements Party.Server {
     }
   }
 
+  checkAllPlayersDead(): boolean {
+    if (this.players.size === 0) return false
+    for (const [, p] of this.players) {
+      if (p.hp > 0) return false
+    }
+    this.broadcast(["go"])
+    return true
+  }
+
   // ─── Broadcasting ───────────────────────────────────────────────────────
 
   buildGameState() {
-    return {
-      type: 'game_state',
+    return ["gs", {
       wave: this.wave,
       waveState: this.waveState,
       platforms: this.platforms,
@@ -585,7 +605,7 @@ export default class GameServer implements Party.Server {
       coverBoxes: this.coverBoxes,
       weaponPickups: this.weaponPickups,
       enemies: this.enemies.filter(e => e.state !== 'dead'),
-    }
+    }]
   }
 
   buildEnemyUpdate(): ArrayBuffer | null {

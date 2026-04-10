@@ -229,42 +229,46 @@ function connectToRoom(room: string) {
       return
     }
 
-    let msg: any
-    try { msg = JSON.parse(event.data) } catch { return }
+    // All messages use array format: [type, data]
+    let raw: any
+    try { raw = JSON.parse(event.data) } catch { return }
 
-    switch (msg.type) {
+    const msgType = Array.isArray(raw) ? raw[0] : raw.type
+    const d = Array.isArray(raw) ? raw[1] : raw
+
+    switch (msgType) {
       // ─── Connection ───────────────────────────────────────────────
-      case 'welcome':
-        localPlayerIndex = msg.playerIndex
-        roomCode = msg.roomCode
+      case 'wl': // welcome: [playerIndex, roomCode, playerCount]
+        localPlayerIndex = d[0]
+        roomCode = d[1]
         inRoom = true
+        state.players[0].playerIndex = localPlayerIndex
         nicknames.set(localPlayerIndex, localNickname)
         onStatusChange?.(`Room: ${roomCode} — You are P${localPlayerIndex + 1}`)
-        // Send nickname to server
         if (socket && localNickname) {
-          socket.send(JSON.stringify({ type: 'set_nickname', nickname: localNickname }))
+          socket.send(JSON.stringify(["nn", localNickname]))
         }
         break
 
-      case 'player_joined': {
-        const name = msg.nickname || `P${msg.playerIndex + 1}`
-        nicknames.set(msg.playerIndex, name)
+      case 'pj': { // player_joined: [playerIndex, nickname]
+        const name = d[1] || `P${d[0] + 1}`
+        nicknames.set(d[0], name)
         onStatusChange?.(`${name} joined! Room: ${roomCode}`)
         state.coopEnabled = true
-        ensureRemotePlayer(msg.playerIndex)
+        ensureRemotePlayer(d[0])
         break
       }
 
-      case 'nickname_update':
-        nicknames.set(msg.playerIndex, msg.nickname)
+      case 'nu': // nickname_update: [playerIndex, nickname]
+        nicknames.set(d[0], d[1])
         break
 
-      case 'player_left': {
-        const leftName = nicknames.get(msg.playerIndex) || `P${(msg.playerIndex ?? 0) + 1}`
-        nicknames.delete(msg.playerIndex ?? -1)
+      case 'pl': { // player_left: playerIndex
+        const leftName = nicknames.get(d) || `P${(d ?? 0) + 1}`
+        nicknames.delete(d ?? -1)
         onStatusChange?.(`${leftName} left`)
-        if (msg.playerIndex != null) {
-          const slot = remoteSlot(msg.playerIndex)
+        if (d != null) {
+          const slot = remoteSlot(d)
           if (slot > 0 && slot < state.players.length) {
             state.players.splice(slot, 1)
             remoteTargets.delete(slot)
@@ -275,46 +279,43 @@ function connectToRoom(room: string) {
         break
       }
 
-      case 'error':
-        onStatusChange?.(msg.message)
+      case 'er': // error: message
+        onStatusChange?.(d)
         break
 
       // ─── Game State (from server) ─────────────────────────────────
-      case 'game_state':
-      case 'wave_start':
-        applyLevelData(msg)
-        if (msg.type === 'game_state') {
-          serverAuthoritative = true
-          startMultiplayerGame()
-        }
-        if (msg.type === 'wave_start') {
-          // Respawn dead player at wave start
-          if (state.player.hp <= 0) respawnPlayer()
-          state.waveState = 'active'
-          state.invincibleTimer = 1.0
-        }
+      case 'gs': // game_state: { wave, platforms, ... }
+        applyLevelData(d)
+        serverAuthoritative = true
+        startMultiplayerGame()
         break
 
-      case 'wave_cleared':
-        state.waveState = 'cleared'
-        SFX.waveCleared()
-        state.waveTimer = 4
-        // Heal player between waves
-        state.player.hp = Math.min(100, state.player.hp + 15)
-        for (const wp of state.weaponPickups) wp.collected = false
+      case 'ws': // wave_start: { wave, platforms, enemies, ... }
+        applyLevelData(d)
+        if (state.player.hp <= 0) respawnPlayer()
+        state.waveState = 'active'
+        state.invincibleTimer = 1.0
         break
 
-      case 'wave_countdown':
-        state.waveState = 'countdown'
-        state.waveTimer = msg.timer
-        state.enemies.length = 0
-        state.bloodDecals.length = 0
+      case 'wv': // wave events: "c" = cleared, [wave, timer] = countdown
+        if (d === 'c') {
+          state.waveState = 'cleared'
+          SFX.waveCleared()
+          state.waveTimer = 4
+          state.player.hp = Math.min(100, state.player.hp + 15)
+          for (const wp of state.weaponPickups) wp.collected = false
+        } else {
+          state.waveState = 'countdown'
+          state.waveTimer = d[1]
+          state.enemies.length = 0
+          state.bloodDecals.length = 0
+        }
         break
 
       // ─── Reinforcements (new enemies mid-wave) ─────────────────────
-      case 'reinforcements': {
+      case 'rf': { // reinforcements: [enemies...]
         const diff = 1 + (state.wave - 1) * 0.1
-        for (const e of msg.enemies) {
+        for (const e of d) {
           const cfg = ENEMY_CONFIGS[e.behavior as keyof typeof ENEMY_CONFIGS]
           const hp = e.hp ?? Math.round(cfg.hp * diff)
           state.enemies.push({
@@ -337,27 +338,27 @@ function connectToRoom(room: string) {
       }
 
       // ─── Ammo Drop (server-decided) ───────────────────────────────
-      case 'ammo_drop':
+      case 'ad': // ammo_drop: [x, y, weaponType, amount]
         state.ammoPickups.push({
-          x: msg.x, y: msg.y,
+          x: d[0], y: d[1],
           vy: -120, onGround: false,
           life: 15, bobTimer: 0,
-          weaponType: msg.weaponType,
-          amount: msg.amount,
+          weaponType: d[2],
+          amount: d[3],
         })
         break
 
       // ─── World State Changes ──────────────────────────────────────
-      case 'weapon_collected': {
-        const wp = state.weaponPickups[msg.index]
+      case 'wc': { // weapon_collected: index
+        const wp = state.weaponPickups[d]
         if (wp) wp.collected = true
         break
       }
 
-      case 'cover_destroyed': {
+      case 'cd': { // cover_destroyed: [x, y, coverType, explosive]
         for (let i = state.coverBoxes.length - 1; i >= 0; i--) {
           const c = state.coverBoxes[i]
-          if (Math.abs(c.x - msg.x) < 2 && Math.abs(c.y - msg.y) < 2) {
+          if (Math.abs(c.x - d[0]) < 2 && Math.abs(c.y - d[1]) < 2) {
             state.coverBoxes.splice(i, 1)
             break
           }
@@ -365,10 +366,10 @@ function connectToRoom(room: string) {
         break
       }
 
-      case 'platform_destroyed': {
+      case 'pd': { // platform_destroyed: [x, y, w, h]
         for (let i = platforms.length - 1; i >= 0; i--) {
           const p = platforms[i]
-          if (p.destructible && Math.abs(p.x - msg.x) < 2 && Math.abs(p.y - msg.y) < 2) {
+          if (p.destructible && Math.abs(p.x - d[0]) < 2 && Math.abs(p.y - d[1]) < 2) {
             platforms.splice(i, 1)
             break
           }
@@ -377,14 +378,22 @@ function connectToRoom(room: string) {
       }
 
       // ─── Game Control ─────────────────────────────────────────────
-      case 'pause':
-        state.gameState = msg.paused ? 'paused' : 'playing'
+      case 'pa': // pause: 1/0
+        state.gameState = d === 1 ? 'paused' : 'playing'
         break
 
-      case 'game_restart':
+      case 'go': // game_over
+        if (!state.gameOver) {
+          state.gameOver = true
+          state.deathSlowMo = true
+          state.deathSlowMoTimer = 2.0
+        }
+        break
+
+      case 'gr': // game_restart: { platforms, ... }
         restart()
         SFX.startAmbient()
-        applyLevelData(msg)
+        applyLevelData(d)
         for (let i = 1; i < state.players.length; i++) {
           const p = state.players[i]
           p.hp = 100; p.x = state.player.x + 50 * i; p.y = state.player.y
@@ -456,6 +465,8 @@ function ensureRemotePlayer(remoteIndex: number) {
   while (state.players.length <= slot) {
     state.players.push(createPlayerState(state.players.length, state.player.x + 50 * state.players.length, state.player.y))
   }
+  // Ensure the player's index matches the server player index (not the array slot)
+  state.players[slot].playerIndex = remoteIndex
 }
 
 function applyRemotePlayerState(msg: any) {
@@ -519,18 +530,17 @@ export function sendPlayerState() {
   const aimWorldX = state.mouse.x + state.camera.x
   const aimWorldY = state.mouse.y + state.camera.y
   const aimAngle = Math.atan2(aimWorldY - (p.y + p.h / 2), aimWorldX - (p.x + p.w / 2))
-  socket.send(JSON.stringify({
-    type: 'player_state',
-    pi: localPlayerIndex,
-    x: Math.round(p.x), y: Math.round(p.y),
-    vx: Math.round(p.vx), vy: Math.round(p.vy),
-    hp: Math.round(p.hp), f: p.facing,
-    g: p.onGround ? 1 : 0, c: p.crouching ? 1 : 0,
-    d: p.diving ? 1 : 0, r: p.rolling ? 1 : 0,
-    bt: p.bulletTimeActive ? 1 : 0,
-    anim: state.currentAnim, at: Math.round(state.animTimer * 100) / 100,
-    w: state.currentWeapon, aa: Math.round(aimAngle * 100) / 100,
-  }))
+  // Array format: ["ps", [x, y, vx, vy, hp, f, g, c, d, r, bt, anim, at, w, aa]]
+  socket.send(JSON.stringify(["ps", [
+    Math.round(p.x), Math.round(p.y),
+    Math.round(p.vx), Math.round(p.vy),
+    Math.round(p.hp), p.facing,
+    p.onGround ? 1 : 0, p.crouching ? 1 : 0,
+    p.diving ? 1 : 0, p.rolling ? 1 : 0,
+    p.bulletTimeActive ? 1 : 0,
+    state.currentAnim, Math.round(state.animTimer * 100) / 100,
+    state.currentWeapon, Math.round(aimAngle * 100) / 100,
+  ]]))
 
   // Flush any queued player bullets
   flushPlayerBullets()
@@ -547,38 +557,38 @@ export function queuePlayerBullet(x: number, y: number, vx: number, vy: number, 
 
 function flushPlayerBullets() {
   if (!socket || !connected || pendingPlayerBullets.length === 0) return
-  socket.send(JSON.stringify({ type: 'player_bullets', bullets: pendingPlayerBullets }))
+  socket.send(JSON.stringify(["pb", pendingPlayerBullets.map(b => [b.x, b.y, b.vx, b.vy, b.d])]))
   pendingPlayerBullets.length = 0
 }
 
 export function sendEnemyDamage(enemyIdx: number, damage: number, headshot: boolean) {
   if (!socket || !connected || !serverAuthoritative) return
-  socket.send(JSON.stringify({ type: 'enemy_damage', enemyIdx, damage, headshot }))
+  socket.send(JSON.stringify(["ed", [enemyIdx, damage, headshot ? 1 : 0]]))
 }
 
 export function sendCoverDestroyed(x: number, y: number, coverType: string, explosive: boolean) {
   if (!socket || !connected || !serverAuthoritative) return
-  socket.send(JSON.stringify({ type: 'cover_destroyed', x: Math.round(x), y: Math.round(y), coverType, explosive }))
+  socket.send(JSON.stringify(["cd", [Math.round(x), Math.round(y), coverType, explosive ? 1 : 0]]))
 }
 
 export function sendPlatformDestroyed(x: number, y: number, w: number, h: number) {
   if (!socket || !connected || !serverAuthoritative) return
-  socket.send(JSON.stringify({ type: 'platform_destroyed', x, y, w, h }))
+  socket.send(JSON.stringify(["pd", [x, y, w, h]]))
 }
 
 export function sendWeaponCollected(index: number) {
   if (!socket || !connected || !serverAuthoritative) return
-  socket.send(JSON.stringify({ type: 'weapon_collected', index }))
+  socket.send(JSON.stringify(["wc", index]))
 }
 
 export function sendPause(paused: boolean) {
   if (!socket || !connected || !inRoom) return
-  socket.send(JSON.stringify({ type: 'pause', paused }))
+  socket.send(JSON.stringify(["pa", paused ? 1 : 0]))
 }
 
 export function sendRestart() {
   if (!socket || !connected) return
-  socket.send(JSON.stringify({ type: 'request_restart' }))
+  socket.send(JSON.stringify(["rr"]))
 }
 
 export function disconnect() {
@@ -617,7 +627,7 @@ export function setLocalNickname(name: string) {
   localStorage.setItem('bulletTime2d_nickname', localNickname)
   nicknames.set(localPlayerIndex, localNickname)
   if (socket && connected && inRoom) {
-    socket.send(JSON.stringify({ type: 'set_nickname', nickname: localNickname }))
+    socket.send(JSON.stringify(["nn", localNickname]))
   }
 }
 
