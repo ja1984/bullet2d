@@ -95,28 +95,30 @@ export function getPlayerAnim(): PlayerAnim {
   return 'idle'
 }
 
-export function drawSprite(anim: SpriteAnim, x: number, y: number, flipX: boolean, rotation = 0, loop = true, anchorBottom = false, forceFrame = -1): boolean {
+export function drawSprite(anim: SpriteAnim, x: number, y: number, flipX: boolean, rotation = 0, loop = true, anchorBottom = false, forceFrame = -1, overrideAnimName?: string, overrideTimer?: number, overrideW?: number, overrideH?: number): boolean {
   if (!anim.loaded) return false
   const ctx = state.ctx!
 
   // Use active skin's sprite config for frame count
   const skinConfig = PLAYER_SKINS[state.playerSkin].spriteConfig
-  const animName = getPlayerAnim()
-  const maxFrames = skinConfig[animName]?.frames ?? anim.frames.length
+  const animName = overrideAnimName || getPlayerAnim()
+  const maxFrames = skinConfig[animName as import('../types').PlayerAnim]?.frames ?? anim.frames.length
 
-  const rawFrame = Math.floor(state.animTimer * anim.fps)
+  const timer = overrideTimer ?? state.animTimer
+  const rawFrame = Math.floor(timer * anim.fps)
   const frameIdx = forceFrame >= 0 ? forceFrame : (loop ? rawFrame % maxFrames : Math.min(rawFrame, maxFrames - 1))
   const img = anim.frames[frameIdx]
   if (!img) return false
   const drawW = SPRITE_FRAME_SIZE
   const drawH = SPRITE_FRAME_SIZE
 
-  const player = state.player
-  const centerX = x + player.w / 2
+  const pw = overrideW ?? state.player.w
+  const ph = overrideH ?? state.player.h
+  const centerX = x + pw / 2
   const diveOffset = (anchorBottom && frameIdx >= 2) ? DIVE_SPRITE_Y_OFFSET : 0
   const centerY = anchorBottom
-    ? (y + player.h) - drawH / 2 + diveOffset
-    : y + player.h / 2
+    ? (y + ph) - drawH / 2 + diveOffset
+    : y + ph / 2
 
   ctx.save()
   ctx.translate(centerX, centerY)

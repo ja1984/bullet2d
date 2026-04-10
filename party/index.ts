@@ -2,7 +2,7 @@
 
 import type * as Party from "partykit/server"
 import type { ServerEnemy, Rect, Vec2, CoverBox, WeaponType } from "../shared/types"
-import { encodeEnemyUpdate, encodePlayerStates, encodeEnemyBullets, encodeEnemyKilled, encodeEnemyHit } from "../shared/binary"
+import { MSG, encodeEnemyUpdate, encodePlayerStates, encodeEnemyBullets, encodePlayerBullets, encodeEnemyKilled, encodeEnemyHit, encodeFrame, decodeMsgType, decodeClientPlayerState, decodeEnemyDamage, decodeBullets } from "../shared/binary"
 import { ENEMY_CONFIGS } from "../shared/constants"
 import { resolvePhysicsShared } from "../shared/physics"
 import { generateLevel, generateCoverBoxes, generateWeaponPickups } from "../shared/levelgen"
@@ -29,6 +29,7 @@ interface WeaponPickupRecord {
 export default class GameServer implements Party.Server {
   // Players
   players: Map<number, PlayerRecord> = new Map()
+  playerNicknames: Map<number, string> = new Map()
   nextIndex = 0
 
   // Game world
@@ -52,6 +53,10 @@ export default class GameServer implements Party.Server {
   running = false
   paused = false
   lastTick = 0
+
+  // Delta compression: last sent enemy positions (for skipping unchanged)
+  lastEnemyX: Map<number, number> = new Map()
+  lastEnemyY: Map<number, number> = new Map()
 
   constructor(readonly room: Party.Room) {}
 
@@ -84,15 +89,15 @@ export default class GameServer implements Party.Server {
       playerCount: this.players.size,
     }))
 
-    // Tell new player about existing players
+    // Tell new player about existing players (with nicknames)
     for (const [existingPi] of this.players) {
       if (existingPi !== playerIndex) {
-        conn.send(JSON.stringify({ type: 'player_joined', playerIndex: existingPi }))
+        conn.send(JSON.stringify({ type: 'player_joined', playerIndex: existingPi, nickname: this.playerNicknames.get(existingPi) || '' }))
       }
     }
 
     // Notify existing players about new player
-    this.broadcast({ type: 'player_joined', playerIndex }, conn.id)
+    this.broadcast({ type: 'player_joined', playerIndex, nickname: '' }, conn.id)
 
     // If game is already running, send current state to late joiner
     if (this.running) {
@@ -108,6 +113,7 @@ export default class GameServer implements Party.Server {
   onClose(conn: Party.Connection) {
     const pi = (conn.state as any)?.playerIndex ?? -1
     this.players.delete(pi)
+    this.playerNicknames.delete(pi)
     this.broadcast({ type: 'player_left', playerIndex: pi })
 
     if (this.players.size < 2) {
@@ -117,44 +123,29 @@ export default class GameServer implements Party.Server {
 
   // ─── Message Handling ───────────────────────────────────────────────────
 
-  onMessage(message: string, sender: Party.Connection) {
-    let msg: any
-    try { msg = JSON.parse(message) } catch { return }
+  onMessage(message: string | ArrayBuffer, sender: Party.Connection) {
     const pi = (sender.state as any)?.playerIndex ?? -1
 
+    // Binary messages (high-frequency)
+    if (message instanceof ArrayBuffer || (typeof message === 'object' && !(typeof message === 'string'))) {
+      const buf = message instanceof ArrayBuffer ? message : new Uint8Array(message as any).buffer
+      this.handleBinaryMessage(buf, pi)
+      return
+    }
+
+    let msg: any
+    try { msg = JSON.parse(message) } catch { return }
+
     switch (msg.type) {
-      case 'player_state': {
-        const p = this.players.get(pi)
-        if (!p) break
-        p.x = msg.x; p.y = msg.y; p.vx = msg.vx; p.vy = msg.vy
-        p.hp = msg.hp; p.facing = msg.f; p.onGround = msg.g === 1
-        p.crouching = msg.c === 1; p.diving = msg.d === 1
-        p.rolling = msg.r === 1; p.bulletTimeActive = msg.bt === 1
-        p.anim = msg.anim; p.animTimer = msg.at
-        p.weapon = msg.w; p.aimAngle = msg.aa
+      case 'enemy_damage': {
+        this.applyEnemyDamage(msg.enemyIdx, msg.damage, msg.headshot)
         break
       }
 
-      case 'enemy_damage': {
-        const e = this.enemies[msg.enemyIdx]
-        if (!e || e.state === 'dead') break
-        const dmg = msg.headshot ? e.maxHp : Math.min(msg.damage, e.hp)
-        e.hp -= dmg
-        e.hitTimer = 0.3
-        if (e.hp <= 0) {
-          e.state = 'dead'
-          e.deathTimer = 3
-          this.broadcastBinary(encodeEnemyKilled(msg.enemyIdx))
-          // Server-decided ammo drop (40% chance)
-          if (Math.random() < 0.4) {
-            const dropTypes = ['shotgun', 'm16', 'sniper', 'grenades'] as const
-            const dropType = dropTypes[Math.floor(Math.random() * dropTypes.length)]
-            const amounts: Record<string, number> = { shotgun: 4, m16: 15, sniper: 3, grenades: 2 }
-            this.broadcast({ type: 'ammo_drop', x: Math.round(e.x + e.w / 2), y: Math.round(e.y), weaponType: dropType, amount: amounts[dropType] })
-          }
-        } else {
-          this.broadcastBinary(encodeEnemyHit(msg.enemyIdx, e.hp))
-        }
+      case 'set_nickname': {
+        const nickname = (msg.nickname || '').trim().slice(0, 16)
+        this.playerNicknames.set(pi, nickname)
+        this.broadcast({ type: 'nickname_update', playerIndex: pi, nickname })
         break
       }
 
@@ -202,6 +193,63 @@ export default class GameServer implements Party.Server {
     }
   }
 
+  // ─── Binary Message Handling ─────────────────────────────────────────────
+
+  handleBinaryMessage(buf: ArrayBuffer, pi: number) {
+    const msgType = decodeMsgType(buf)
+    switch (msgType) {
+      case MSG.C_PLAYER_STATE: {
+        const ps = decodeClientPlayerState(buf)
+        const p = this.players.get(pi)
+        if (!p) break
+        p.x = ps.x; p.y = ps.y; p.vx = ps.vx; p.vy = ps.vy
+        p.hp = ps.hp; p.facing = ps.facing; p.onGround = ps.onGround
+        p.crouching = ps.crouching; p.diving = ps.diving
+        p.rolling = ps.rolling; p.bulletTimeActive = ps.bulletTimeActive
+        p.anim = ps.anim; p.animTimer = ps.animTimer
+        p.weapon = ps.weapon; p.aimAngle = ps.aimAngle
+        break
+      }
+      case MSG.C_ENEMY_DAMAGE: {
+        const { enemyIdx, damage, headshot } = decodeEnemyDamage(buf)
+        this.applyEnemyDamage(enemyIdx, damage, headshot, pi)
+        break
+      }
+      case MSG.C_PLAYER_BULLETS: {
+        // Re-encode as PLAYER_BULLETS and broadcast to everyone except sender
+        const bullets = decodeBullets(buf)
+        if (bullets.length > 0) {
+          const outBuf = encodePlayerBullets(bullets)
+          for (const [, p] of this.players) {
+            if (p.index !== pi) p.conn.send(outBuf)
+          }
+        }
+        break
+      }
+    }
+  }
+
+  applyEnemyDamage(enemyIdx: number, damage: number, headshot: boolean, killerPi = -1) {
+    const e = this.enemies[enemyIdx]
+    if (!e || e.state === 'dead') return
+    const dmg = headshot ? e.maxHp : Math.min(damage, e.hp)
+    e.hp -= dmg
+    e.hitTimer = 0.3
+    if (e.hp <= 0) {
+      e.state = 'dead'
+      e.deathTimer = 3
+      this.broadcastBinary(encodeEnemyKilled(enemyIdx, killerPi))
+      if (Math.random() < 0.4) {
+        const dropTypes = ['shotgun', 'm16', 'sniper', 'grenades'] as const
+        const dropType = dropTypes[Math.floor(Math.random() * dropTypes.length)]
+        const amounts: Record<string, number> = { shotgun: 4, m16: 15, sniper: 3, grenades: 2 }
+        this.broadcast({ type: 'ammo_drop', x: Math.round(e.x + e.w / 2), y: Math.round(e.y), weaponType: dropType, amount: amounts[dropType] })
+      }
+    } else {
+      this.broadcastBinary(encodeEnemyHit(enemyIdx, e.hp))
+    }
+  }
+
   // ─── Game Loop (onAlarm) ────────────────────────────────────────────────
 
   async onAlarm() {
@@ -220,17 +268,24 @@ export default class GameServer implements Party.Server {
     this.updateEnemies(dt)
     this.updateWaveState(dt)
 
-    // Broadcast enemy positions (~30fps)
-    this.broadcastEnemyUpdate()
+    // Build per-tick binary messages and batch into single frame per client
+    const enemyBuf = this.buildEnemyUpdate()
+    const bulletBuf = this.pendingBullets.length > 0 ? encodeEnemyBullets(this.pendingBullets) : null
+    this.pendingBullets = []
 
-    // Broadcast any new enemy bullets (binary)
-    if (this.pendingBullets.length > 0) {
-      this.broadcastBinary(encodeEnemyBullets(this.pendingBullets))
-      this.pendingBullets = []
+    // Build per-player frames (each gets enemy + bullets + other players)
+    const allPlayerData = this.buildAllPlayerData()
+    for (const [pi, p] of this.players) {
+      const msgs: ArrayBuffer[] = []
+      if (enemyBuf) msgs.push(enemyBuf)
+      if (bulletBuf) msgs.push(bulletBuf)
+      // Player states excluding self
+      const others = allPlayerData.filter((d: { pi: number }) => d.pi !== pi)
+      if (others.length > 0) msgs.push(encodePlayerStates(others))
+      if (msgs.length > 0) {
+        p.conn.send(msgs.length === 1 ? msgs[0] : encodeFrame(msgs))
+      }
     }
-
-    // Broadcast all player states to each other
-    this.broadcastPlayerStates()
 
     // Schedule next tick
     this.room.storage.setAlarm(Date.now() + TICK_MS)
@@ -402,7 +457,7 @@ export default class GameServer implements Party.Server {
         x: p.pos.x, y: p.pos.y, w: 20, h: 14, type: p.type, collected: false,
       }))
     }
-    this.enemies = spawnWaveEnemies(this.wave, this.spawnPositions)
+    this.enemies = spawnWaveEnemies(this.wave, this.spawnPositions, this.players.size)
     this.waveState = 'active'
     this.reinforcementsSent = false
 
@@ -503,29 +558,30 @@ export default class GameServer implements Party.Server {
     }
   }
 
-  broadcastEnemyUpdate() {
+  buildEnemyUpdate(): ArrayBuffer | null {
+    // Delta compression: only send enemies whose position changed by >2px
     const data: { i: number; x: number; y: number; vx: number; vy: number; facing: number; hp: number; alert: boolean }[] = []
     for (let i = 0; i < this.enemies.length; i++) {
       const en = this.enemies[i]
       if (en.state === 'dead') continue
-      data.push({ i, x: Math.round(en.x), y: Math.round(en.y), vx: Math.round(en.vx), vy: Math.round(en.vy), facing: en.facing, hp: en.hp, alert: en.state === 'alert' })
+      const rx = Math.round(en.x), ry = Math.round(en.y)
+      const lastX = this.lastEnemyX.get(i) ?? -9999
+      const lastY = this.lastEnemyY.get(i) ?? -9999
+      if (Math.abs(rx - lastX) > 2 || Math.abs(ry - lastY) > 2) {
+        data.push({ i, x: rx, y: ry, vx: Math.round(en.vx), vy: Math.round(en.vy), facing: en.facing, hp: en.hp, alert: en.state === 'alert' })
+        this.lastEnemyX.set(i, rx)
+        this.lastEnemyY.set(i, ry)
+      }
     }
-    if (data.length > 0) {
-      this.broadcastBinary(encodeEnemyUpdate(data))
-    }
+    return data.length > 0 ? encodeEnemyUpdate(data) : null
   }
 
-  broadcastPlayerStates() {
+  buildAllPlayerData(): { pi: number; x: number; y: number; vx: number; vy: number; hp: number; facing: number; ground: boolean; crouch: boolean; dive: boolean; roll: boolean; bt: boolean; anim: string; animTimer: number; weapon: string; aimAngle: number }[] {
     const all: { pi: number; x: number; y: number; vx: number; vy: number; hp: number; facing: number; ground: boolean; crouch: boolean; dive: boolean; roll: boolean; bt: boolean; anim: string; animTimer: number; weapon: string; aimAngle: number }[] = []
     for (const [pi, p] of this.players) {
       all.push({ pi, x: p.x, y: p.y, vx: p.vx, vy: p.vy, hp: p.hp, facing: p.facing, ground: p.onGround, crouch: p.crouching, dive: p.diving, roll: p.rolling, bt: p.bulletTimeActive, anim: p.anim, animTimer: p.animTimer, weapon: p.weapon, aimAngle: p.aimAngle })
     }
-    for (const [pi, p] of this.players) {
-      const others = all.filter(a => a.pi !== pi)
-      if (others.length > 0) {
-        p.conn.send(encodePlayerStates(others))
-      }
-    }
+    return all
   }
 
   broadcast(msg: any, excludeId?: string) {

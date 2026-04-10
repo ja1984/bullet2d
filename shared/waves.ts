@@ -47,14 +47,31 @@ export function createEnemy(x: number, y: number, behavior: EnemyBehavior, wave:
   }
 }
 
-export function spawnWaveEnemies(wave: number, spawnPositions: Vec2[]): ServerEnemy[] {
+export function getPlayerScaling(playerCount: number): { countMult: number; hpMult: number } {
+  // 1 player = 1x enemies, 1x hp
+  // 2 players = 1.5x enemies, 1.1x hp
+  // 5 players = 3x enemies, 1.3x hp
+  // 20 players = 10.5x enemies, 2x hp
+  return {
+    countMult: 0.5 + playerCount * 0.5,
+    hpMult: 1 + (playerCount - 1) * 0.1,
+  }
+}
+
+export function spawnWaveEnemies(wave: number, spawnPositions: Vec2[], playerCount = 1): ServerEnemy[] {
   const enemies: ServerEnemy[] = []
   const waveEnemies = getWaveEnemies(wave)
+  const { countMult, hpMult } = getPlayerScaling(playerCount)
   let spawnIdx = 0
   for (const group of waveEnemies) {
-    for (let i = 0; i < group.count; i++) {
+    const scaledCount = Math.max(1, Math.round(group.count * countMult))
+    for (let i = 0; i < scaledCount; i++) {
       const pos = spawnPositions[spawnIdx % spawnPositions.length]
-      enemies.push(createEnemy(pos.x, pos.y, group.behavior, wave))
+      const enemy = createEnemy(pos.x, pos.y, group.behavior, wave)
+      // Scale HP for player count
+      enemy.hp = Math.round(enemy.hp * hpMult)
+      enemy.maxHp = enemy.hp
+      enemies.push(enemy)
       spawnIdx++
     }
   }

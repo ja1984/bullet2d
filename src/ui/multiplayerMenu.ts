@@ -1,7 +1,7 @@
 // ─── Multiplayer Menu UI ──────────────────────────────────────────────────────
 
 import { state } from '../state'
-import { hostGame, joinGame, disconnect, isConnected, isOnline, getRoomCode, getRole, setOnStatusChange, setOnRoomListUpdate } from '../systems/network'
+import { hostGame, joinGame, disconnect, isConnected, isOnline, getRoomCode, getRole, setOnStatusChange, setOnRoomListUpdate, getLocalNickname, setLocalNickname } from '../systems/network'
 
 let menuEl: HTMLDivElement | null = null
 let statusEl: HTMLDivElement | null = null
@@ -84,6 +84,26 @@ function updateButtons() {
   const role = getRole()
 
   if (role === 'none') {
+    // Nickname input
+    const nickWrap = document.createElement('div')
+    nickWrap.style.cssText = 'margin-bottom: 8px;'
+    const nickInput = document.createElement('input')
+    nickInput.type = 'text'
+    nickInput.placeholder = 'Nickname'
+    nickInput.maxLength = 16
+    nickInput.value = getLocalNickname()
+    nickInput.style.cssText = `
+      padding: 6px 12px; width: 140px; text-align: center;
+      background: rgba(255,255,255,0.08); color: #fff;
+      border: 1px solid rgba(255,255,255,0.2); border-radius: 4px;
+      font: bold 13px Audiowide, monospace; outline: none;
+    `
+    nickInput.addEventListener('input', () => setLocalNickname(nickInput.value))
+    nickInput.addEventListener('mousedown', (e) => e.stopPropagation())
+    nickInput.addEventListener('keydown', (e) => e.stopPropagation())
+    nickWrap.appendChild(nickInput)
+    buttonsEl.appendChild(nickWrap)
+
     buttonsEl.appendChild(makeBtn('HOST GAME', () => hostGame()))
     buttonsEl.appendChild(makeBtn('JOIN GAME', () => {
       const code = prompt('Enter room code:')

@@ -10,7 +10,7 @@ import { restart } from '../main'
 import { spawnParticles } from './particles'
 import { enemyTypes } from '../sprites/enemySprites'
 import { COMBO_WINDOW } from '../constants'
-import { MSG, decodeMsgType, decodeEnemyUpdate, decodePlayerStates, decodeEnemyBullets, decodeEnemyKilled, decodeEnemyHit } from '../../shared/binary'
+import { MSG, decodeMsgType, decodeEnemyUpdate, decodePlayerStates, decodeEnemyBullets, decodeEnemyKilled, decodeEnemyHit, decodeFrame, encodeClientPlayerState, encodeEnemyDamage as encodeEnemyDamageBin, encodeClientPlayerBullets, decodeBullets } from '../../shared/binary'
 
 let socket: PartySocket | null = null
 let connected = false
@@ -19,6 +19,14 @@ let localPlayerIndex = 0
 let lastSyncTime = 0
 let inRoom = false
 let serverAuthoritative = false
+let localNickname = localStorage.getItem('bulletTime2d_nickname') || ''
+let intentionalDisconnect = false
+let reconnectAttempts = 0
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+const MAX_RECONNECT_ATTEMPTS = 3
+
+// Remote player nicknames (keyed by playerIndex)
+const nicknames: Map<number, string> = new Map()
 
 // Remote player interpolation targets (per slot)
 const remoteTargets: Map<number, { x: number; y: number; vx: number; vy: number }> = new Map()
@@ -88,8 +96,17 @@ function handleBinaryMessage(buf: ArrayBuffer) {
       }
       break
     }
+    case MSG.PLAYER_BULLETS: {
+      for (const b of decodeBullets(buf)) {
+        state.bullets.push({
+          x: b.x, y: b.y, vx: b.vx, vy: b.vy,
+          owner: 'player', life: 2, trail: [], damage: b.d,
+        })
+      }
+      break
+    }
     case MSG.ENEMY_KILLED: {
-      const idx = decodeEnemyKilled(buf)
+      const { index: idx, killerPi } = decodeEnemyKilled(buf)
       const e = state.enemies[idx]
       if (e && e.state !== 'dead') {
         e.hp = 0; e.state = 'dead'
@@ -113,6 +130,13 @@ function handleBinaryMessage(buf: ArrayBuffer) {
             text: `${state.comboCount}x COMBO!`, color: '#ffaa22',
             life: 1.0, maxLife: 1.0,
           })
+        }
+
+        // Kill feed with attribution
+        const killerName = killerPi >= 0 ? getNickname(killerPi) : ''
+        const enemyName = e.behavior === 'boss' ? 'BOSS' : e.behavior.toUpperCase()
+        if (killerName) {
+          state.killFeed.push({ text: `${killerName} killed ${enemyName}`, color: '#ffcc44', life: 2.5, maxLife: 2.5 })
         }
 
         // Multi-kill feed
@@ -139,26 +163,55 @@ function handleBinaryMessage(buf: ArrayBuffer) {
       if (e) e.hp = hp
       break
     }
+    case MSG.FRAME: {
+      // Batched frame — unpack and handle each sub-message
+      for (const sub of decodeFrame(buf)) {
+        handleBinaryMessage(sub)
+      }
+      break
+    }
   }
 }
 
 function connectToRoom(room: string) {
+  intentionalDisconnect = false
   onStatusChange?.(`Connecting to room ${room}...`)
 
   socket = new PartySocket({ host: PARTYKIT_HOST, room })
 
-  socket.addEventListener('open', () => { connected = true })
+  socket.addEventListener('open', () => {
+    connected = true
+    reconnectAttempts = 0
+    intentionalDisconnect = false
+  })
 
   socket.addEventListener('close', () => {
     connected = false
     inRoom = false
-    roomCode = ''
-    serverAuthoritative = false
-    state.coopEnabled = false
-    state.players.length = 1
-    remoteTargets.clear()
-    enemyTargets.clear()
-    onStatusChange?.('Disconnected')
+    const wasRoom = roomCode
+
+    if (!intentionalDisconnect && wasRoom && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      // Auto-reconnect
+      reconnectAttempts++
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 8000)
+      onStatusChange?.(`Connection lost. Reconnecting in ${delay / 1000}s... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`)
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null
+        onStatusChange?.(`Reconnecting to ${wasRoom}...`)
+        connectToRoom(wasRoom)
+      }, delay)
+    } else {
+      // Full disconnect
+      roomCode = ''
+      serverAuthoritative = false
+      state.coopEnabled = false
+      state.players.length = 1
+      remoteTargets.clear()
+      enemyTargets.clear()
+      nicknames.clear()
+      reconnectAttempts = 0
+      onStatusChange?.('Disconnected')
+    }
   })
 
   socket.addEventListener('error', () => { onStatusChange?.('Connection error') })
@@ -184,17 +237,31 @@ function connectToRoom(room: string) {
         localPlayerIndex = msg.playerIndex
         roomCode = msg.roomCode
         inRoom = true
+        nicknames.set(localPlayerIndex, localNickname)
         onStatusChange?.(`Room: ${roomCode} — You are P${localPlayerIndex + 1}`)
+        // Send nickname to server
+        if (socket && localNickname) {
+          socket.send(JSON.stringify({ type: 'set_nickname', nickname: localNickname }))
+        }
         break
 
-      case 'player_joined':
-        onStatusChange?.(`P${msg.playerIndex + 1} joined! Room: ${roomCode}`)
+      case 'player_joined': {
+        const name = msg.nickname || `P${msg.playerIndex + 1}`
+        nicknames.set(msg.playerIndex, name)
+        onStatusChange?.(`${name} joined! Room: ${roomCode}`)
         state.coopEnabled = true
         ensureRemotePlayer(msg.playerIndex)
         break
+      }
+
+      case 'nickname_update':
+        nicknames.set(msg.playerIndex, msg.nickname)
+        break
 
       case 'player_left': {
-        onStatusChange?.(`P${(msg.playerIndex ?? 0) + 1} left`)
+        const leftName = nicknames.get(msg.playerIndex) || `P${(msg.playerIndex ?? 0) + 1}`
+        nicknames.delete(msg.playerIndex ?? -1)
+        onStatusChange?.(`${leftName} left`)
         if (msg.playerIndex != null) {
           const slot = remoteSlot(msg.playerIndex)
           if (slot > 0 && slot < state.players.length) {
@@ -451,23 +518,39 @@ export function sendPlayerState() {
   const aimWorldX = state.mouse.x + state.camera.x
   const aimWorldY = state.mouse.y + state.camera.y
   const aimAngle = Math.atan2(aimWorldY - (p.y + p.h / 2), aimWorldX - (p.x + p.w / 2))
-  socket.send(JSON.stringify({
-    type: 'player_state',
+  socket.send(encodeClientPlayerState({
     pi: localPlayerIndex,
     x: Math.round(p.x), y: Math.round(p.y),
     vx: Math.round(p.vx), vy: Math.round(p.vy),
-    hp: Math.round(p.hp), f: p.facing,
-    g: p.onGround ? 1 : 0, c: p.crouching ? 1 : 0,
-    d: p.diving ? 1 : 0, r: p.rolling ? 1 : 0,
-    bt: p.bulletTimeActive ? 1 : 0,
-    anim: state.currentAnim, at: Math.round(state.animTimer * 100) / 100,
-    w: state.currentWeapon, aa: Math.round(aimAngle * 100) / 100,
+    hp: Math.round(p.hp), facing: p.facing,
+    ground: p.onGround, crouch: p.crouching,
+    dive: p.diving, roll: p.rolling, bt: p.bulletTimeActive,
+    anim: state.currentAnim, animTimer: state.animTimer,
+    weapon: state.currentWeapon, aimAngle,
   }))
+
+  // Flush any queued player bullets
+  flushPlayerBullets()
+}
+
+// ─── Player Bullet Sync ─────────────────────────────────────────────────────
+
+const pendingPlayerBullets: { x: number; y: number; vx: number; vy: number; d: number }[] = []
+
+export function queuePlayerBullet(x: number, y: number, vx: number, vy: number, damage: number) {
+  if (!inRoom || !state.coopEnabled) return
+  pendingPlayerBullets.push({ x: Math.round(x), y: Math.round(y), vx: Math.round(vx), vy: Math.round(vy), d: damage })
+}
+
+function flushPlayerBullets() {
+  if (!socket || !connected || pendingPlayerBullets.length === 0) return
+  socket.send(encodeClientPlayerBullets(pendingPlayerBullets))
+  pendingPlayerBullets.length = 0
 }
 
 export function sendEnemyDamage(enemyIdx: number, damage: number, headshot: boolean) {
   if (!socket || !connected || !serverAuthoritative) return
-  socket.send(JSON.stringify({ type: 'enemy_damage', enemyIdx, damage, headshot }))
+  socket.send(encodeEnemyDamageBin(enemyIdx, damage, headshot))
 }
 
 export function sendCoverDestroyed(x: number, y: number, coverType: string, explosive: boolean) {
@@ -496,6 +579,9 @@ export function sendRestart() {
 }
 
 export function disconnect() {
+  intentionalDisconnect = true
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+  reconnectAttempts = 0
   socket?.close()
   socket = null
   connected = false
@@ -506,6 +592,7 @@ export function disconnect() {
   state.players.length = 1
   remoteTargets.clear()
   enemyTargets.clear()
+  nicknames.clear()
 }
 
 // ─── Getters ────────────────────────────────────────────────────────────────
@@ -520,6 +607,16 @@ export function getLocalPlayerIndex() { return localPlayerIndex }
 
 export function setOnRoomListUpdate(cb: (rooms: string[]) => void) { onRoomListUpdate = cb }
 export function setOnStatusChange(cb: (status: string) => void) { onStatusChange = cb }
+export function getNickname(playerIndex: number): string { return nicknames.get(playerIndex) || `P${playerIndex + 1}` }
+export function getLocalNickname(): string { return localNickname }
+export function setLocalNickname(name: string) {
+  localNickname = name.trim().slice(0, 16)
+  localStorage.setItem('bulletTime2d_nickname', localNickname)
+  nicknames.set(localPlayerIndex, localNickname)
+  if (socket && connected && inRoom) {
+    socket.send(JSON.stringify({ type: 'set_nickname', nickname: localNickname }))
+  }
+}
 
 // ─── Legacy/compat exports (kept for code that still references them) ───────
 export function syncGameEvents() {} // No-op: server handles all sync now

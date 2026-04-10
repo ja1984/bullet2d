@@ -20,7 +20,7 @@ import { startWave, getDifficultyMult, spawnEnemy } from './systems/waves'
 import { updateAmbient, spawnAmbientObjects } from './systems/ambient'
 import type { EnemyBehavior } from './types'
 import { updateCamera } from './systems/camera'
-import { sendPlayerState, updateRemotePlayer, syncGameEvents, isOnline, isHost, isServerAuthoritative, queueBulletSync, sendRestart, sendCoverDestroyed, sendEnemyDamage } from './systems/network'
+import { sendPlayerState, updateRemotePlayer, syncGameEvents, isOnline, isHost, isServerAuthoritative, queueBulletSync, sendRestart, sendCoverDestroyed, sendEnemyDamage, queuePlayerBullet } from './systems/network'
 import { restart } from './main'
 import { isAction, getBindings } from './keybindings'
 
@@ -428,7 +428,7 @@ export function update(dt: number) {
         penetrate: state.currentWeapon === 'sniper',
       }
       state.bullets.push(bullet)
-      queueBulletSync(bullet)
+      queuePlayerBullet(bullet.x, bullet.y, bullet.vx, bullet.vy, bullet.damage)
     }
     spawnMuzzleFlash(cx + Math.cos(baseAngle) * gunDist, cy + Math.sin(baseAngle) * gunDist, baseAngle)
     // Shell casing

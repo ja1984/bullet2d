@@ -6,6 +6,7 @@ import { state } from '../state'
 import { playerSprites, getPlayerAnim, drawSprite } from '../sprites/playerSprites'
 import { drawEnemySprite } from '../sprites/enemySprites'
 import { weaponSprites } from '../sprites/weaponSprites'
+import { getNickname } from '../systems/network'
 
 export function drawEnemies() {
   const ctx = state.ctx!
@@ -460,7 +461,7 @@ export function drawRemotePlayer() {
       const shouldLoop = anim !== 'fall' && anim !== 'jump' && anim !== 'pickup' && anim !== 'dive' && anim !== 'crouch' && anim !== 'uncrouch' && anim !== 'land' && anim !== 'death'
       const anchorBottom = anim === 'dive'
       const crouchOffset = (anim === 'crouch' || anim === 'uncrouch') ? -8 : 0
-      spriteDrawn = drawSprite(sheet, px, py + crouchOffset, flipX, rotation, shouldLoop, anchorBottom, -1)
+      spriteDrawn = drawSprite(sheet, px, py + crouchOffset, flipX, rotation, shouldLoop, anchorBottom, -1, anim, rp.animTimer, rp.w, rp.h)
     }
 
     if (!spriteDrawn) {
@@ -516,7 +517,8 @@ export function drawRemotePlayer() {
     ctx.fillStyle = color
     ctx.font = 'bold 10px Audiowide, monospace'
     ctx.textAlign = 'center'
-    ctx.fillText(`P${i + 1}`, px + rp.w / 2, py - 8)
+    const nick = getNickname(rp.playerIndex ?? i)
+    ctx.fillText(nick, px + rp.w / 2, py - 8)
 
     ctx.globalAlpha = 1
   }
