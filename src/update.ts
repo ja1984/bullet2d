@@ -20,8 +20,9 @@ import { startWave, getDifficultyMult, spawnEnemy } from './systems/waves'
 import { updateAmbient, spawnAmbientObjects } from './systems/ambient'
 import type { EnemyBehavior } from './types'
 import { updateCamera } from './systems/camera'
-import { sendPlayerState, updateRemotePlayer, syncGameEvents, isOnline, isHost, isServerAuthoritative, queueBulletSync, sendRestart } from './systems/network'
+import { sendPlayerState, updateRemotePlayer, syncGameEvents, isOnline, isHost, isServerAuthoritative, queueBulletSync, sendRestart, sendCoverDestroyed, sendEnemyDamage } from './systems/network'
 import { restart } from './main'
+import { isAction, getBindings } from './keybindings'
 
 export function update(dt: number) {
   state.gameTime += dt
@@ -63,7 +64,7 @@ export function update(dt: number) {
   if (state.invincibleTimer > 0) state.invincibleTimer -= dt
 
   // Bullet time (toggle on Shift press)
-  const shiftDown = state.keys['Space']
+  const shiftDown = isAction('bulletTime', state.keys)
   if (shiftDown && state.shiftWasUp) {
     state.bulletTimeToggled = !state.bulletTimeToggled
     if (state.bulletTimeToggled) SFX.bulletTimeOn()
@@ -125,8 +126,8 @@ export function update(dt: number) {
   player.facing = aimWorldX > player.x + player.w / 2 ? 1 : -1
 
   // Double-tap detection
-  const leftDown = state.keys['KeyA'] || state.keys['ArrowLeft']
-  const rightDown = state.keys['KeyD'] || state.keys['ArrowRight']
+  const leftDown = isAction('moveLeft', state.keys)
+  const rightDown = isAction('moveRight', state.keys)
   let doubleTapLeft = false
   let doubleTapRight = false
 
@@ -149,7 +150,7 @@ export function update(dt: number) {
   state.rightWasUp = !rightDown
 
   // Crouch
-  const wantsCrouch = (state.keys['KeyS'] || state.keys['ArrowDown']) && player.onGround && !player.diving
+  const wantsCrouch = isAction('crouch', state.keys) && player.onGround && !player.diving
   if (wantsCrouch && !player.crouching) {
     player.crouching = true
     player.uncrouchTimer = 0
@@ -169,7 +170,7 @@ export function update(dt: number) {
     if (leftDown) player.vx = -moveSpeed
     if (rightDown) player.vx = moveSpeed
 
-    const jumpPressed = state.keys['KeyW'] || state.keys['ArrowUp']
+    const jumpPressed = isAction('jump', state.keys)
 
     if (player.onGround) {
       // Trigger landing animation only if we were airborne from a jump
@@ -251,7 +252,7 @@ export function update(dt: number) {
       player.vx = player.diveDir * DIVE_SPEED * 0.5
     }
     // Allow jump to cancel dive
-    const jumpDuringDive = state.keys['KeyW'] || state.keys['ArrowUp']
+    const jumpDuringDive = isAction('jump', state.keys)
     if (jumpDuringDive && player.jumpWasReleased && player.onGround) {
       player.diving = false
       player.vy = -PLAYER_JUMP * 0.6
@@ -351,11 +352,13 @@ export function update(dt: number) {
 
   // Manual reload with R
   const hasReserves = state.playerAmmo[state.currentWeapon] === -1 || state.playerAmmo[state.currentWeapon] > 0
-  if (state.keys['KeyR'] && !player.reloading && state.magRounds[state.currentWeapon] < weapon.magSize && hasReserves) {
+  if (isAction('reload', state.keys) && !player.reloading && state.magRounds[state.currentWeapon] < weapon.magSize && hasReserves) {
     player.reloading = true
     player.reloadTimer = weapon.reloadTime
-
-    state.keys['KeyR'] = false
+    // Clear the reload keys to prevent re-triggering
+    const rb = getBindings().reload
+    state.keys[rb.primary] = false
+    if (rb.secondary) state.keys[rb.secondary] = false
   }
 
   const canShoot = weapon.auto ? state.mouseDown : state.mouseClicked
@@ -676,7 +679,11 @@ export function update(dt: number) {
         if (dist < GRENADE_RADIUS) {
           const falloff = 1 - dist / GRENADE_RADIUS
           const dmg = WEAPONS.grenades.damage * falloff
-          e.hp -= dmg
+          if (serverAuth) {
+            sendEnemyDamage(state.enemies.indexOf(e), dmg, false)
+          } else {
+            e.hp -= dmg
+          }
           e.hitTimer = 0.3
           e.showHpTimer = 2
           e.vx = (dx / dist) * 200 * falloff
@@ -686,7 +693,7 @@ export function update(dt: number) {
             text: Math.round(dmg).toString(), color: '#ff8844',
             life: 0.8, maxLife: 0.8,
           })
-          if (e.hp <= 0) {
+          if (e.hp <= 0 && !serverAuth) {
             e.state = 'dead'
             state.hitPauseTimer = 0.07
             SFX.enemyDeath(e.type)
@@ -714,6 +721,7 @@ export function update(dt: number) {
         const by = (box.y + box.h / 2) - g.y
         if (Math.sqrt(bx * bx + by * by) < GRENADE_RADIUS * 0.7) {
           spawnParticles(box.x + box.w / 2, box.y + box.h / 2, 10, '#aa8855', 150)
+          sendCoverDestroyed(box.x, box.y, box.type, box.type === 'explosive')
           state.coverBoxes.splice(j, 1)
         }
       }
@@ -846,10 +854,14 @@ export function update(dt: number) {
         const dist = Math.sqrt(edx * edx + edy * edy)
         if (dist < radius) {
           const falloff = 1 - dist / radius
-          e.hp -= 60 * falloff
+          if (serverAuth) {
+            sendEnemyDamage(state.enemies.indexOf(e), 60 * falloff, false)
+          } else {
+            e.hp -= 60 * falloff
+          }
           e.vy = -150 * falloff
           e.showHpTimer = 2
-          if (e.hp <= 0) {
+          if (e.hp <= 0 && !serverAuth) {
             e.state = 'dead'
             SFX.enemyDeath(e.type)
             e.deathTimer = 3
@@ -873,10 +885,12 @@ export function update(dt: number) {
           other.hp -= 40 * (1 - Math.sqrt(odx * odx + ody * ody) / radius)
         }
       }
+      sendCoverDestroyed(box.x, box.y, box.type, true)
       state.coverBoxes.splice(i, 1)
     } else if (box.hp <= 0) {
       // Non-explosive box destroyed by chain damage
       spawnParticles(box.x + box.w / 2, box.y + box.h / 2, 10, '#aa8855', 150)
+      sendCoverDestroyed(box.x, box.y, box.type, false)
       state.coverBoxes.splice(i, 1)
     }
   }
@@ -945,8 +959,13 @@ export function update(dt: number) {
   // ── Camera ──
   updateCamera(dt)
 
-  // Wave system — server handles this when online
-  if (!serverAuth) {
+  // Wave system — server handles this when online, but tick timers locally for HUD
+  if (serverAuth) {
+    // Just tick the timers for display — server drives actual transitions
+    if (state.waveState === 'countdown' || state.waveState === 'cleared') {
+      state.waveTimer -= dt
+    }
+  } else {
     if (state.waveState === 'countdown') {
       state.waveTimer -= dt
       if (state.waveTimer <= 0) {

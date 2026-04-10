@@ -7,6 +7,9 @@ import { state, createPlayerState, respawnPlayer } from '../state'
 import { setGeneratedLevel, ENEMY_CONFIGS, platforms } from '../constants'
 import { SFX } from '../audio'
 import { restart } from '../main'
+import { spawnParticles } from './particles'
+import { enemyTypes } from '../sprites/enemySprites'
+import { COMBO_WINDOW } from '../constants'
 import { MSG, decodeMsgType, decodeEnemyUpdate, decodePlayerStates, decodeEnemyBullets, decodeEnemyKilled, decodeEnemyHit } from '../../shared/binary'
 
 let socket: PartySocket | null = null
@@ -89,8 +92,44 @@ function handleBinaryMessage(buf: ArrayBuffer) {
       const idx = decodeEnemyKilled(buf)
       const e = state.enemies[idx]
       if (e && e.state !== 'dead') {
-        e.hp = 0; e.state = 'dead'; e.deathTimer = 3
+        e.hp = 0; e.state = 'dead'
+        const deathFrames = enemyTypes[e.type]?.spriteConfig.death.frames ?? 10
+        const deathFps = enemyTypes[e.type]?.spriteConfig.death.fps ?? 10
+        e.deathTimer = (deathFrames / deathFps) + 2
+        e.vx = 0; e.vy = 0
         state.killCount++
+        state.hitPauseTimer = 0.05
+        state.screenShake = 10
+        SFX.enemyDeath(e.type)
+        spawnParticles(e.x + e.w / 2, e.y + e.h / 2, 20, '#f44', 250)
+        state.bloodDecals.push({ x: e.x + e.w / 2, y: e.y + e.h, size: 15 + Math.random() * 15, alpha: 1 })
+
+        // Combo
+        state.comboCount++
+        state.comboTimer = COMBO_WINDOW
+        if (state.comboCount >= 2) {
+          state.floatingTexts.push({
+            x: e.x + e.w / 2, y: e.y - 25,
+            text: `${state.comboCount}x COMBO!`, color: '#ffaa22',
+            life: 1.0, maxLife: 1.0,
+          })
+        }
+
+        // Multi-kill feed
+        state.multiKillCount++
+        state.multiKillTimer = 1.5
+        if (state.multiKillCount === 2) state.killFeed.push({ text: 'DOUBLE KILL!', color: '#ff8844', life: 2.5, maxLife: 2.5 })
+        else if (state.multiKillCount === 3) state.killFeed.push({ text: 'TRIPLE KILL!', color: '#ffaa22', life: 2.5, maxLife: 2.5 })
+        else if (state.multiKillCount === 4) state.killFeed.push({ text: 'QUAD KILL!', color: '#ffcc00', life: 3.0, maxLife: 3.0 })
+        else if (state.multiKillCount >= 5) state.killFeed.push({ text: 'RAMPAGE!', color: '#ff00ff', life: 3.0, maxLife: 3.0 })
+        if (state.killFeed.length > 5) state.killFeed.shift()
+
+        // Kill cam on last enemy
+        const aliveCount = state.enemies.filter(en => en !== e && en.state !== 'dead').length
+        if (aliveCount === 0 && state.waveState === 'active') {
+          state.killCamActive = true
+          state.killCamTimer = 1.5
+        }
       }
       break
     }
@@ -202,6 +241,42 @@ function connectToRoom(room: string) {
         state.waveTimer = msg.timer
         state.enemies.length = 0
         state.bloodDecals.length = 0
+        break
+
+      // ─── Reinforcements (new enemies mid-wave) ─────────────────────
+      case 'reinforcements': {
+        const diff = 1 + (state.wave - 1) * 0.1
+        for (const e of msg.enemies) {
+          const cfg = ENEMY_CONFIGS[e.behavior as keyof typeof ENEMY_CONFIGS]
+          const hp = e.hp ?? Math.round(cfg.hp * diff)
+          state.enemies.push({
+            x: e.x, y: e.y,
+            w: e.w ?? (e.behavior === 'boss' ? 36 : e.behavior === 'drone' ? 16 : 24),
+            h: e.h ?? (e.behavior === 'boss' ? 56 : e.behavior === 'drone' ? 16 : 44),
+            hp, maxHp: e.maxHp ?? hp,
+            vx: 0, vy: 0, onGround: false, facing: -1,
+            shootTimer: Math.random() * cfg.shootInterval,
+            alertTimer: 0, state: 'idle' as any, deathTimer: 0,
+            patrolDir: Math.random() > 0.5 ? 1 : -1,
+            patrolTimer: Math.random() * 3 + 1,
+            type: e.type ?? (e.behavior === 'grunt' ? 'thug' : 'grunt'),
+            behavior: e.behavior,
+            animTimer: 0, currentAnim: 'idle' as any, hitTimer: 0, showHpTimer: 0,
+          })
+        }
+        state.killFeed.push({ text: 'REINFORCEMENTS!', color: '#ff4466', life: 2.5, maxLife: 2.5 })
+        break
+      }
+
+      // ─── Ammo Drop (server-decided) ───────────────────────────────
+      case 'ammo_drop':
+        state.ammoPickups.push({
+          x: msg.x, y: msg.y,
+          vy: -120, onGround: false,
+          life: 15, bobTimer: 0,
+          weaponType: msg.weaponType,
+          amount: msg.amount,
+        })
         break
 
       // ─── World State Changes ──────────────────────────────────────
@@ -393,6 +468,21 @@ export function sendPlayerState() {
 export function sendEnemyDamage(enemyIdx: number, damage: number, headshot: boolean) {
   if (!socket || !connected || !serverAuthoritative) return
   socket.send(JSON.stringify({ type: 'enemy_damage', enemyIdx, damage, headshot }))
+}
+
+export function sendCoverDestroyed(x: number, y: number, coverType: string, explosive: boolean) {
+  if (!socket || !connected || !serverAuthoritative) return
+  socket.send(JSON.stringify({ type: 'cover_destroyed', x: Math.round(x), y: Math.round(y), coverType, explosive }))
+}
+
+export function sendPlatformDestroyed(x: number, y: number, w: number, h: number) {
+  if (!socket || !connected || !serverAuthoritative) return
+  socket.send(JSON.stringify({ type: 'platform_destroyed', x, y, w, h }))
+}
+
+export function sendWeaponCollected(index: number) {
+  if (!socket || !connected || !serverAuthoritative) return
+  socket.send(JSON.stringify({ type: 'weapon_collected', index }))
 }
 
 export function sendPause(paused: boolean) {

@@ -145,8 +145,46 @@ export default class GameServer implements Party.Server {
           e.state = 'dead'
           e.deathTimer = 3
           this.broadcastBinary(encodeEnemyKilled(msg.enemyIdx))
+          // Server-decided ammo drop (40% chance)
+          if (Math.random() < 0.4) {
+            const dropTypes = ['shotgun', 'm16', 'sniper', 'grenades'] as const
+            const dropType = dropTypes[Math.floor(Math.random() * dropTypes.length)]
+            const amounts: Record<string, number> = { shotgun: 4, m16: 15, sniper: 3, grenades: 2 }
+            this.broadcast({ type: 'ammo_drop', x: Math.round(e.x + e.w / 2), y: Math.round(e.y), weaponType: dropType, amount: amounts[dropType] })
+          }
         } else {
           this.broadcastBinary(encodeEnemyHit(msg.enemyIdx, e.hp))
+        }
+        break
+      }
+
+      case 'cover_destroyed': {
+        // Client reports cover box destroyed — broadcast to all
+        this.broadcast({ type: 'cover_destroyed', x: msg.x, y: msg.y, coverType: msg.coverType, explosive: msg.explosive })
+        // Remove from server state
+        for (let i = this.coverBoxes.length - 1; i >= 0; i--) {
+          if (Math.abs(this.coverBoxes[i].x - msg.x) < 2 && Math.abs(this.coverBoxes[i].y - msg.y) < 2) {
+            this.coverBoxes.splice(i, 1); break
+          }
+        }
+        break
+      }
+
+      case 'platform_destroyed': {
+        this.broadcast({ type: 'platform_destroyed', x: msg.x, y: msg.y, w: msg.w, h: msg.h })
+        for (let i = this.platforms.length - 1; i >= 0; i--) {
+          const p = this.platforms[i]
+          if (p.destructible && Math.abs(p.x - msg.x) < 2 && Math.abs(p.y - msg.y) < 2) {
+            this.platforms.splice(i, 1); break
+          }
+        }
+        break
+      }
+
+      case 'weapon_collected': {
+        if (msg.index >= 0 && msg.index < this.weaponPickups.length) {
+          this.weaponPickups[msg.index].collected = true
+          this.broadcast({ type: 'weapon_collected', index: msg.index })
         }
         break
       }
@@ -324,11 +362,15 @@ export default class GameServer implements Party.Server {
           this.reinforcementsSent = true
           const behaviors = ['grunt', 'rusher', 'drone'] as const
           const count = 1 + Math.floor(this.wave / 4)
+          const newEnemies: ServerEnemy[] = []
           for (let r = 0; r < count; r++) {
             const rx = 200 + Math.random() * 2000
             const behavior = behaviors[Math.floor(Math.random() * behaviors.length)]
-            this.enemies.push(createEnemy(rx, behavior === 'drone' ? 50 : -50, behavior, this.wave))
+            const enemy = createEnemy(rx, behavior === 'drone' ? 50 : -50, behavior, this.wave)
+            this.enemies.push(enemy)
+            newEnemies.push(enemy)
           }
+          this.broadcast({ type: 'reinforcements', enemies: newEnemies })
         }
       }
 

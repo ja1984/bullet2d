@@ -7,6 +7,7 @@ import { state } from './state'
 import { SFX } from './audio'
 import { setSkin } from './sprites/playerSprites'
 import { sendPause, isHost } from './systems/network'
+import { isAction } from './keybindings'
 
 export function getAvailableWeapons(): WeaponType[] {
   const all: WeaponType[] = ['pistol', 'shotgun', 'm16', 'sniper', 'grenades']
@@ -34,10 +35,10 @@ export function setupInput(canvas: HTMLCanvasElement) {
         : skinIds[(idx - 1 + skinIds.length) % skinIds.length]
       setSkin(next)
     }
-    if (e.code === 'Escape' && state.gameState === 'playing') {
+    if (isAction('pause', { [e.code]: true }) && state.gameState === 'playing') {
       state.gameState = 'paused'
       if (state.coopEnabled && isHost()) sendPause(true)
-    } else if (e.code === 'Escape' && state.gameState === 'paused') {
+    } else if (isAction('pause', { [e.code]: true }) && state.gameState === 'paused') {
       state.gameState = 'playing'
       if (state.coopEnabled && isHost()) sendPause(false)
     }
@@ -56,11 +57,18 @@ export function setupInput(canvas: HTMLCanvasElement) {
     state.mouse.x = (e.clientX - rect.left) * (CANVAS_W / rect.width)
     state.mouse.y = (e.clientY - rect.top) * (CANVAS_H / rect.height)
   })
-  canvas.addEventListener('mousedown', () => {
-    state.mouseDown = true; state.mouseClicked = true
-    if (state.gameState === 'title') { state.gameState = 'playing'; SFX.startAmbient() }
+  canvas.addEventListener('mousedown', (e) => {
+    state.keys[`Mouse${e.button}`] = true
+    if (e.button === 0) {
+      state.mouseDown = true; state.mouseClicked = true
+      if (state.gameState === 'title') { state.gameState = 'playing'; SFX.startAmbient() }
+    }
   })
-  canvas.addEventListener('mouseup', () => { state.mouseDown = false })
+  canvas.addEventListener('mouseup', (e) => {
+    state.keys[`Mouse${e.button}`] = false
+    if (e.button === 0) state.mouseDown = false
+  })
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 
   // Weapon switching with number keys and scroll
   window.addEventListener('keydown', (e) => {

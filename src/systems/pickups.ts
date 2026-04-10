@@ -5,6 +5,7 @@ import { GRAVITY, PLAYER_MAX_HP, WEAPONS, platforms } from '../constants'
 import { state } from '../state'
 import { SFX } from '../audio'
 import { rectsOverlap } from './physics'
+import { sendWeaponCollected } from './network'
 
 export function updateWeaponPickups(dt: number) {
   const { weaponPickups, player, floatingTexts } = state
@@ -16,6 +17,7 @@ export function updateWeaponPickups(dt: number) {
     const wr: Rect = { x: wp.x, y: wp.y - Math.sin(wp.bobTimer) * 4, w: wp.w, h: wp.h }
     if (rectsOverlap(pr, wr)) {
       wp.collected = true
+      sendWeaponCollected(weaponPickups.indexOf(wp))
       const wpDef = WEAPONS[wp.type]
       state.playerAmmo[wp.type] += wpDef.ammo
       // Only switch to it if player doesn't already have it

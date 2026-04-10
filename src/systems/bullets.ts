@@ -6,7 +6,7 @@ import { state, saveScore, checkAllPlayersDead } from '../state'
 import { SFX } from '../audio'
 import { spawnParticles, spawnExplosionLight } from './particles'
 import { enemyTypes } from '../sprites/enemySprites'
-import { isServerAuthoritative, sendEnemyDamage } from './network'
+import { isServerAuthoritative, sendEnemyDamage, sendCoverDestroyed, sendPlatformDestroyed } from './network'
 
 export function updateBullets(gameDt: number) {
   const { bullets, coverBoxes, enemies, player, floatingTexts, bloodDecals, ammoPickups } = state
@@ -44,6 +44,7 @@ export function updateBullets(gameDt: number) {
                 box.vy = 0
               }
             }
+            sendPlatformDestroyed(p.x, p.y, p.w, p.h)
             platforms.splice(pi, 1)
           }
         }
@@ -98,11 +99,16 @@ export function updateBullets(gameDt: number) {
               if (dist < radius) {
                 const falloff = 1 - dist / radius
                 const dmg = 60 * falloff
-                e.hp -= dmg
+                if (isServerAuthoritative()) {
+                  const eIdx = enemies.indexOf(e)
+                  sendEnemyDamage(eIdx, dmg, false)
+                } else {
+                  e.hp -= dmg
+                }
                 e.vy = -150 * falloff
                 e.vx = edx > 0 ? 200 * falloff : -200 * falloff
                 e.showHpTimer = 2
-                if (e.hp <= 0) {
+                if (e.hp <= 0 && !isServerAuthoritative()) {
                   e.state = 'dead'
                   SFX.enemyDeath(e.type)
                   e.deathTimer = 3
@@ -140,6 +146,7 @@ export function updateBullets(gameDt: number) {
             spawnExplosionLight(cx, cy)
             state.screenShake = 6
           }
+          sendCoverDestroyed(box.x, box.y, box.type, box.type === 'explosive')
           coverBoxes.splice(j, 1)
         }
         hitBox = true
