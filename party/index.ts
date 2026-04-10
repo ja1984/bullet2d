@@ -58,7 +58,18 @@ export default class GameServer implements Party.Server {
   lastEnemyX: Map<number, number> = new Map()
   lastEnemyY: Map<number, number> = new Map()
 
+  static BUILD_TIME = new Date().toISOString()
+
   constructor(readonly room: Party.Room) {}
+
+  async onRequest(_req: Party.Request) {
+    return new Response(JSON.stringify({
+      version: GameServer.BUILD_TIME,
+      players: this.players.size,
+      wave: this.wave,
+      running: this.running,
+    }), { headers: { 'Content-Type': 'application/json' } })
+  }
 
   // ─── Connection Management ──────────────────────────────────────────────
 
