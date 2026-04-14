@@ -207,15 +207,18 @@ function handleBinaryMessage(buf: ArrayBuffer) {
       break
     }
     case MSG.PONG: {
-      const { clientTime } = decodePong(buf)
-      const now = performance.now()
-      const sample = now - clientTime
-      if (sample >= 0 && sample < 5000) {
-        // Exponential moving average for smooth RTT
-        if (rtt === 0) { rtt = sample; rttVariance = sample / 2 }
-        else {
-          rttVariance = rttVariance * 0.75 + Math.abs(sample - rtt) * 0.25
-          rtt = rtt * 0.8 + sample * 0.2
+      const { clientTime: seq } = decodePong(buf)
+      const sendTime = pendingPings.get(seq)
+      if (sendTime != null) {
+        pendingPings.delete(seq)
+        const sample = performance.now() - sendTime
+        if (sample >= 0 && sample < 5000) {
+          // Exponential moving average for smooth RTT
+          if (rtt === 0) { rtt = sample; rttVariance = sample / 2 }
+          else {
+            rttVariance = rttVariance * 0.75 + Math.abs(sample - rtt) * 0.25
+            rtt = rtt * 0.8 + sample * 0.2
+          }
         }
       }
       break
@@ -577,8 +580,10 @@ function interpolateSnapshots<T extends Snapshot>(
   // renderTime is past all snapshots → extrapolate from latest
   const latest = snapshots[snapshots.length - 1]
   const overshoot = renderTime - latest.time
-  if (overshoot > 0 && overshoot < 200) { // cap extrapolation at 200ms
-    return { a: latest, extrapolate: overshoot / 1000 }
+  if (overshoot > 0) {
+    // Extrapolate with velocity up to 200ms, then hold position (don't return null)
+    const extTime = Math.min(overshoot, 200) / 1000
+    return { a: latest, extrapolate: extTime }
   }
   // renderTime is before all snapshots → use earliest
   return { a: snapshots[0], b: snapshots[0], t: 0 }
@@ -647,12 +652,19 @@ function applyPlayerFields(p: any, s: PlayerSnapshot) {
   if (s.aa != null) p.aimAngle = s.aa
 }
 
+let pingSeq = 0
+const pendingPings: Map<number, number> = new Map() // seq → sendTime
+
 function maybeSendPing() {
   if (!socket || !connected || !inRoom) return
   const now = performance.now()
   if (now - lastPingTime < pingInterval) return
   lastPingTime = now
-  socket.send(new Uint8Array(encodePing(Math.round(now))))
+  const seq = (pingSeq++) & 0xFFFFFFFF
+  pendingPings.set(seq, now)
+  // Clean old pings (>5s)
+  for (const [s, t] of pendingPings) { if (now - t > 5000) pendingPings.delete(s) }
+  socket.send(new Uint8Array(encodePing(seq)))
 }
 
 // ─── Send to Server ─────────────────────────────────────────────────────────
@@ -744,6 +756,8 @@ export function disconnect() {
   enemySnapshots.clear()
   nicknames.clear()
   rtt = 0; rttVariance = 0
+  pendingPings.clear()
+  pingSeq = 0
 }
 
 // ─── Getters ────────────────────────────────────────────────────────────────

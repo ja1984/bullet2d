@@ -963,7 +963,7 @@ export function update(dt: number) {
   if (serverAuth) {
     // Just tick the timers for display — server drives actual transitions
     if (state.waveState === 'countdown' || state.waveState === 'cleared') {
-      state.waveTimer -= dt
+      state.waveTimer = Math.max(0, state.waveTimer - dt)
     }
   } else {
     if (state.waveState === 'countdown') {
