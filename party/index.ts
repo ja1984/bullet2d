@@ -2,7 +2,7 @@
 
 import type * as Party from "partykit/server"
 import type { ServerEnemy, Rect, Vec2, CoverBox, WeaponType } from "../shared/types"
-import { MSG, encodeEnemyUpdate, encodePlayerStates, encodeEnemyBullets, encodePlayerBullets, encodeEnemyKilled, encodeEnemyHit, encodeFrame, decodeMsgType, decodeClientPlayerState, decodeEnemyDamage, decodeBullets } from "../shared/binary"
+import { MSG, encodeEnemyUpdate, encodePlayerStates, encodeEnemyBullets, encodePlayerBullets, encodeEnemyKilled, encodeEnemyHit, encodeFrame, decodeMsgType, decodeClientPlayerState, decodeEnemyDamage, decodeBullets, decodePing, encodePong, encodeServerTime } from "../shared/binary"
 import { ENEMY_CONFIGS } from "../shared/constants"
 import { resolvePhysicsShared } from "../shared/physics"
 import { generateLevel, generateCoverBoxes, generateWeaponPickups } from "../shared/levelgen"
@@ -273,6 +273,15 @@ export default class GameServer implements Party.Server {
         }
         break
       }
+      case MSG.PING: {
+        // Echo back client timestamp + current server time for RTT measurement
+        const clientTime = decodePing(buf)
+        const player = this.players.get(pi)
+        if (player) {
+          player.conn.send(new Uint8Array(encodePong(clientTime, Date.now() & 0xFFFFFFFF)))
+        }
+        break
+      }
     }
   }
 
@@ -317,6 +326,9 @@ export default class GameServer implements Party.Server {
     // Run game tick
     this.updateEnemies(dt)
     this.updateWaveState(dt)
+
+    // Send server timestamp so clients can sync interpolation
+    this.broadcastBinary(encodeServerTime(Date.now() & 0xFFFFFFFF))
 
     // Send enemy update (broadcast same buffer to all)
     const enemyBuf = this.buildEnemyUpdate()

@@ -4,6 +4,7 @@ import type { WeaponType } from '../types'
 import { CANVAS_W, CANVAS_H, PLAYER_MAX_HP, BULLET_TIME_MAX, WEAPONS } from '../constants'
 import { state } from '../state'
 import { weaponSprites } from '../sprites/weaponSprites'
+import { isOnline, getRtt, getNetQuality } from '../systems/network'
 
 export function drawHUD() {
   const ctx = state.ctx!
@@ -388,6 +389,30 @@ export function drawOverlays() {
     ctx.fillText('F11 / Ctrl+F — Fullscreen', CANVAS_W / 2, CANVAS_H / 2 + 72)
     ctx.fillStyle = '#666'
     ctx.fillText('Press ESC to resume', CANVAS_W / 2, CANVAS_H / 2 + 100)
+    ctx.textAlign = 'left'
+  }
+
+  // ── Network ping indicator (top-right, only in multiplayer) ──
+  if (isOnline()) {
+    const ping = getRtt()
+    const quality = getNetQuality()
+    const color = quality === 'good' ? '#44cc66' : quality === 'ok' ? '#ddaa22' : '#dd3333'
+    const barCount = quality === 'good' ? 4 : quality === 'ok' ? 3 : 2
+    const bx = CANVAS_W - 60
+    const by = 14
+
+    // Signal bars
+    for (let i = 0; i < 4; i++) {
+      const h = 4 + i * 3
+      ctx.fillStyle = i < barCount ? color : 'rgba(255,255,255,0.12)'
+      ctx.fillRect(bx + i * 6, by + (16 - h), 4, h)
+    }
+
+    // Ping text
+    ctx.fillStyle = color
+    ctx.font = '9px monospace'
+    ctx.textAlign = 'right'
+    ctx.fillText(`${ping}ms`, bx - 4, by + 12)
     ctx.textAlign = 'left'
   }
 }

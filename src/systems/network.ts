@@ -10,7 +10,7 @@ import { restart } from '../main'
 import { spawnParticles } from './particles'
 import { enemyTypes } from '../sprites/enemySprites'
 import { COMBO_WINDOW } from '../constants'
-import { MSG, decodeMsgType, decodeEnemyUpdate, decodePlayerStates, decodeEnemyBullets, decodeEnemyKilled, decodeEnemyHit, decodeFrame, encodeClientPlayerState, encodeEnemyDamage as encodeEnemyDamageBin, encodeClientPlayerBullets, decodeBullets } from '../../shared/binary'
+import { MSG, decodeMsgType, decodeEnemyUpdate, decodePlayerStates, decodeEnemyBullets, decodeEnemyKilled, decodeEnemyHit, decodeFrame, encodeClientPlayerState, encodeEnemyDamage as encodeEnemyDamageBin, encodeClientPlayerBullets, decodeBullets, encodePing, decodePong, decodeServerTime } from '../../shared/binary'
 
 let socket: PartySocket | null = null
 let connected = false
@@ -28,11 +28,41 @@ const MAX_RECONNECT_ATTEMPTS = 3
 // Remote player nicknames (keyed by playerIndex)
 const nicknames: Map<number, string> = new Map()
 
-// Remote player interpolation targets (per slot)
-const remoteTargets: Map<number, { x: number; y: number; vx: number; vy: number }> = new Map()
+// ─── Snapshot Buffer (for smooth interpolation) ─────────────────────────────
+// Instead of chasing the latest server state, we buffer snapshots and render
+// slightly behind (interpDelay ms), interpolating between two known states.
+// This eliminates jitter from packet timing variance.
 
-// Enemy interpolation targets
-const enemyTargets: Map<number, { x: number; y: number; vx: number; vy: number }> = new Map()
+interface Snapshot {
+  time: number  // local receive time (performance.now())
+  x: number; y: number; vx: number; vy: number
+}
+
+interface PlayerSnapshot extends Snapshot {
+  hp: number; f: number; g: number; c: number; d: number; r: number; bt: number
+  anim: string; at: number; w: string; aa: number
+}
+
+const SNAPSHOT_BUFFER_SIZE = 8 // keep last N snapshots per entity
+const BASE_INTERP_DELAY = 66  // ms — 2 server ticks behind (adaptive, see below)
+
+// Per-slot ring buffers
+const playerSnapshots: Map<number, PlayerSnapshot[]> = new Map()
+const enemySnapshots: Map<number, Snapshot[]> = new Map()
+
+// ─── RTT Measurement ────────────────────────────────────────────────────────
+
+let rtt = 0              // smoothed RTT in ms
+let rttVariance = 0      // jitter estimate
+let lastPingTime = 0     // when we sent the last ping
+let pingInterval = 1000  // send a ping every 1s
+let serverTimeOffset = 0 // estimated (serverTime - localTime) offset
+
+// Adaptive interpolation delay: baseDelay + jitter headroom
+function getInterpDelay(): number {
+  // At minimum 2 ticks (66ms), grows with jitter so we don't run out of buffer
+  return Math.max(BASE_INTERP_DELAY, rtt / 2 + rttVariance * 2)
+}
 
 // Callbacks
 let onStatusChange: ((status: string) => void) | null = null
@@ -67,10 +97,16 @@ function handleBinaryMessage(buf: ArrayBuffer) {
   const msgType = decodeMsgType(buf)
   switch (msgType) {
     case MSG.ENEMY_UPDATE: {
+      const now = performance.now()
       for (const ed of decodeEnemyUpdate(buf)) {
         const e = state.enemies[ed.i]
         if (!e || e.state === 'dead') continue
-        enemyTargets.set(ed.i, { x: ed.x, y: ed.y, vx: ed.vx, vy: ed.vy })
+        // Push into snapshot buffer
+        let buf2 = enemySnapshots.get(ed.i)
+        if (!buf2) { buf2 = []; enemySnapshots.set(ed.i, buf2) }
+        buf2.push({ time: now, x: ed.x, y: ed.y, vx: ed.vx, vy: ed.vy })
+        if (buf2.length > SNAPSHOT_BUFFER_SIZE) buf2.shift()
+        // Hard-snap on teleport
         if (Math.abs(ed.x - e.x) > 100 || Math.abs(ed.y - e.y) > 100) {
           e.x = ed.x; e.y = ed.y
         }
@@ -170,6 +206,26 @@ function handleBinaryMessage(buf: ArrayBuffer) {
       }
       break
     }
+    case MSG.PONG: {
+      const { clientTime } = decodePong(buf)
+      const now = performance.now()
+      const sample = now - clientTime
+      if (sample >= 0 && sample < 5000) {
+        // Exponential moving average for smooth RTT
+        if (rtt === 0) { rtt = sample; rttVariance = sample / 2 }
+        else {
+          rttVariance = rttVariance * 0.75 + Math.abs(sample - rtt) * 0.25
+          rtt = rtt * 0.8 + sample * 0.2
+        }
+      }
+      break
+    }
+    case MSG.SERVER_TIME: {
+      const serverTime = decodeServerTime(buf)
+      const now = performance.now()
+      serverTimeOffset = serverTime - now
+      break
+    }
   }
 }
 
@@ -207,8 +263,8 @@ function connectToRoom(room: string) {
       serverAuthoritative = false
       state.coopEnabled = false
       state.players.length = 1
-      remoteTargets.clear()
-      enemyTargets.clear()
+      playerSnapshots.clear()
+      enemySnapshots.clear()
       nicknames.clear()
       reconnectAttempts = 0
       onStatusChange?.('Disconnected')
@@ -271,7 +327,7 @@ function connectToRoom(room: string) {
           const slot = remoteSlot(d)
           if (slot > 0 && slot < state.players.length) {
             state.players.splice(slot, 1)
-            remoteTargets.delete(slot)
+            playerSnapshots.delete(slot)
           }
         }
         state.coopEnabled = state.players.length > 1
@@ -474,19 +530,23 @@ function applyRemotePlayerState(msg: any) {
   ensureRemotePlayer(msg.pi)
   state.coopEnabled = true
 
+  const now = performance.now()
   const p = state.players[slot]
-  remoteTargets.set(slot, { x: msg.x, y: msg.y, vx: msg.vx, vy: msg.vy })
+
+  // Push into snapshot buffer
+  let snaps = playerSnapshots.get(slot)
+  if (!snaps) { snaps = []; playerSnapshots.set(slot, snaps) }
+  snaps.push({
+    time: now, x: msg.x, y: msg.y, vx: msg.vx, vy: msg.vy,
+    hp: msg.hp, f: msg.f, g: msg.g, c: msg.c, d: msg.d, r: msg.r, bt: msg.bt,
+    anim: msg.anim, at: msg.at, w: msg.w, aa: msg.aa,
+  })
+  if (snaps.length > SNAPSHOT_BUFFER_SIZE) snaps.shift()
+
+  // Hard-snap on teleport
   if (Math.abs(msg.x - p.x) > 150 || Math.abs(msg.y - p.y) > 150) {
     p.x = msg.x; p.y = msg.y
   }
-  p.hp = msg.hp; p.facing = msg.f
-  p.onGround = msg.g === 1; p.crouching = msg.c === 1
-  p.diving = msg.d === 1; p.rolling = msg.r === 1
-  p.bulletTimeActive = msg.bt === 1
-  if (msg.anim) p.currentAnim = msg.anim
-  if (msg.at != null) p.animTimer = msg.at
-  if (msg.w) p.currentWeapon = msg.w
-  if (msg.aa != null) p.aimAngle = msg.aa
 }
 
 function startMultiplayerGame() {
@@ -496,26 +556,103 @@ function startMultiplayerGame() {
   }
 }
 
-// ─── Interpolation (called every frame) ─────────────────────────────────────
+// ─── Snapshot Interpolation (called every frame) ────────────────────────────
+// Renders entities at (now - interpDelay), interpolating between the two
+// snapshots that bracket that time. If no future snapshot exists yet, we
+// extrapolate (dead-reckon) from the latest known state using its velocity.
 
-export function updateRemotePlayer(dt: number) {
-  for (const [slot, target] of remoteTargets) {
-    const p = state.players[slot]
-    if (!p) continue
-    p.x += target.vx * dt; p.y += target.vy * dt
-    p.x += (target.x - p.x) * 8 * dt; p.y += (target.y - p.y) * 8 * dt
-    p.vx = target.vx; p.vy = target.vy
-  }
-
-  // Interpolate enemies from server updates
-  if (serverAuthoritative) {
-    for (const [i, target] of enemyTargets) {
-      const e = state.enemies[i]
-      if (!e || e.state === 'dead') { enemyTargets.delete(i); continue }
-      e.x += target.vx * dt; e.y += target.vy * dt
-      e.x += (target.x - e.x) * 10 * dt; e.y += (target.y - e.y) * 10 * dt
+function interpolateSnapshots<T extends Snapshot>(
+  snapshots: T[], renderTime: number
+): { a: T; b: T; t: number } | { a: T; extrapolate: number } | null {
+  if (snapshots.length === 0) return null
+  // Find the two snapshots that bracket renderTime
+  for (let i = snapshots.length - 1; i > 0; i--) {
+    const b = snapshots[i], a = snapshots[i - 1]
+    if (a.time <= renderTime && renderTime <= b.time) {
+      const range = b.time - a.time
+      const t = range > 0 ? (renderTime - a.time) / range : 0
+      return { a, b, t }
     }
   }
+  // renderTime is past all snapshots → extrapolate from latest
+  const latest = snapshots[snapshots.length - 1]
+  const overshoot = renderTime - latest.time
+  if (overshoot > 0 && overshoot < 200) { // cap extrapolation at 200ms
+    return { a: latest, extrapolate: overshoot / 1000 }
+  }
+  // renderTime is before all snapshots → use earliest
+  return { a: snapshots[0], b: snapshots[0], t: 0 }
+}
+
+export function updateRemotePlayer(_dt: number) {
+  const renderTime = performance.now() - getInterpDelay()
+
+  // ── Remote players ──
+  for (const [slot, snaps] of playerSnapshots) {
+    const p = state.players[slot]
+    if (!p) continue
+    const result = interpolateSnapshots(snaps, renderTime)
+    if (!result) continue
+
+    if ('extrapolate' in result) {
+      // Dead reckoning: continue with last known velocity
+      const s = result.a as PlayerSnapshot
+      p.x = s.x + s.vx * result.extrapolate
+      p.y = s.y + s.vy * result.extrapolate
+      p.vx = s.vx; p.vy = s.vy
+      applyPlayerFields(p, s)
+    } else {
+      // Interpolate between two snapshots
+      const { a, b, t } = result as { a: PlayerSnapshot; b: PlayerSnapshot; t: number }
+      p.x = a.x + (b.x - a.x) * t
+      p.y = a.y + (b.y - a.y) * t
+      p.vx = a.vx + (b.vx - a.vx) * t
+      p.vy = a.vy + (b.vy - a.vy) * t
+      // Use the later snapshot's discrete fields
+      applyPlayerFields(p, t < 0.5 ? a : b)
+    }
+  }
+
+  // ── Enemies ──
+  if (serverAuthoritative) {
+    for (const [i, snaps] of enemySnapshots) {
+      const e = state.enemies[i]
+      if (!e || e.state === 'dead') { enemySnapshots.delete(i); continue }
+      const result = interpolateSnapshots(snaps, renderTime)
+      if (!result) continue
+
+      if ('extrapolate' in result) {
+        e.x = result.a.x + result.a.vx * result.extrapolate
+        e.y = result.a.y + result.a.vy * result.extrapolate
+      } else {
+        const { a, b, t } = result
+        e.x = a.x + (b.x - a.x) * t
+        e.y = a.y + (b.y - a.y) * t
+      }
+    }
+  }
+
+  // ── Ping (RTT measurement) ──
+  maybeSendPing()
+}
+
+function applyPlayerFields(p: any, s: PlayerSnapshot) {
+  p.hp = s.hp; p.facing = s.f
+  p.onGround = s.g === 1; p.crouching = s.c === 1
+  p.diving = s.d === 1; p.rolling = s.r === 1
+  p.bulletTimeActive = s.bt === 1
+  if (s.anim) p.currentAnim = s.anim
+  if (s.at != null) p.animTimer = s.at
+  if (s.w) p.currentWeapon = s.w
+  if (s.aa != null) p.aimAngle = s.aa
+}
+
+function maybeSendPing() {
+  if (!socket || !connected || !inRoom) return
+  const now = performance.now()
+  if (now - lastPingTime < pingInterval) return
+  lastPingTime = now
+  socket.send(new Uint8Array(encodePing(Math.round(now))))
 }
 
 // ─── Send to Server ─────────────────────────────────────────────────────────
@@ -603,9 +740,10 @@ export function disconnect() {
   serverAuthoritative = false
   state.coopEnabled = false
   state.players.length = 1
-  remoteTargets.clear()
-  enemyTargets.clear()
+  playerSnapshots.clear()
+  enemySnapshots.clear()
   nicknames.clear()
+  rtt = 0; rttVariance = 0
 }
 
 // ─── Getters ────────────────────────────────────────────────────────────────
@@ -617,6 +755,12 @@ export function isServerAuthoritative(): boolean { return serverAuthoritative }
 export function isHost(): boolean { return localPlayerIndex === 0 }
 export function getRole() { return inRoom ? (localPlayerIndex === 0 ? 'host' : 'guest') : 'none' }
 export function getLocalPlayerIndex() { return localPlayerIndex }
+export function getRtt(): number { return Math.round(rtt) }
+export function getNetQuality(): 'good' | 'ok' | 'bad' {
+  if (rtt < 80 && rttVariance < 20) return 'good'
+  if (rtt < 150 && rttVariance < 50) return 'ok'
+  return 'bad'
+}
 
 export function setOnRoomListUpdate(cb: (rooms: string[]) => void) { onRoomListUpdate = cb }
 export function setOnStatusChange(cb: (status: string) => void) { onStatusChange = cb }

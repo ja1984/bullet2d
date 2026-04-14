@@ -17,6 +17,10 @@ export const MSG = {
   C_PLAYER_STATE: 10,
   C_ENEMY_DAMAGE: 11,
   C_PLAYER_BULLETS: 12,
+  // Ping/Pong (RTT measurement)
+  PING: 20,           // Client → Server: [u8 MSG, u32 clientTime]
+  PONG: 21,           // Server → Client: [u8 MSG, u32 clientTime, u32 serverTime]
+  SERVER_TIME: 22,    // Server → Client: [u8 MSG, u32 serverTime] (sent each tick)
 } as const
 
 // ─── Lookup Tables ──────────────────────────────────────────────────────────
@@ -310,4 +314,44 @@ export function decodeFrame(buf: ArrayBuffer): ArrayBuffer[] {
     result.push(buf.slice(off, off + len)); off += len
   }
   return result
+}
+
+// ─── Ping / Pong (RTT Measurement) ────────────────────────────────────────
+
+export function encodePing(clientTime: number): ArrayBuffer {
+  const buf = new ArrayBuffer(5)
+  const v = new DataView(buf)
+  v.setUint8(0, MSG.PING)
+  v.setUint32(1, clientTime)
+  return buf
+}
+
+export function decodePing(buf: ArrayBuffer): number {
+  return new DataView(buf).getUint32(1)
+}
+
+export function encodePong(clientTime: number, serverTime: number): ArrayBuffer {
+  const buf = new ArrayBuffer(9)
+  const v = new DataView(buf)
+  v.setUint8(0, MSG.PONG)
+  v.setUint32(1, clientTime)
+  v.setUint32(5, serverTime)
+  return buf
+}
+
+export function decodePong(buf: ArrayBuffer): { clientTime: number; serverTime: number } {
+  const v = new DataView(buf)
+  return { clientTime: v.getUint32(1), serverTime: v.getUint32(5) }
+}
+
+export function encodeServerTime(serverTime: number): ArrayBuffer {
+  const buf = new ArrayBuffer(5)
+  const v = new DataView(buf)
+  v.setUint8(0, MSG.SERVER_TIME)
+  v.setUint32(1, serverTime)
+  return buf
+}
+
+export function decodeServerTime(buf: ArrayBuffer): number {
+  return new DataView(buf).getUint32(1)
 }
