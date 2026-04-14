@@ -679,17 +679,17 @@ export function sendPlayerState() {
   const aimWorldX = state.mouse.x + state.camera.x
   const aimWorldY = state.mouse.y + state.camera.y
   const aimAngle = Math.atan2(aimWorldY - (p.y + p.h / 2), aimWorldX - (p.x + p.w / 2))
-  // Binary format: 19 bytes (was ~150 bytes JSON)
-  socket.send(new Uint8Array(encodeClientPlayerState({
-    pi: localPlayerIndex,
-    x: Math.round(p.x), y: Math.round(p.y),
-    vx: Math.round(p.vx), vy: Math.round(p.vy),
-    hp: Math.round(p.hp), facing: p.facing,
-    ground: p.onGround, crouch: p.crouching,
-    dive: p.diving, roll: p.rolling, bt: p.bulletTimeActive,
-    anim: state.currentAnim, animTimer: state.animTimer,
-    weapon: state.currentWeapon, aimAngle,
-  })))
+  // Array format: ["ps", [x, y, vx, vy, hp, f, g, c, d, r, bt, anim, at, w, aa]]
+  socket.send(JSON.stringify(["ps", [
+    Math.round(p.x), Math.round(p.y),
+    Math.round(p.vx), Math.round(p.vy),
+    Math.round(p.hp), p.facing,
+    p.onGround ? 1 : 0, p.crouching ? 1 : 0,
+    p.diving ? 1 : 0, p.rolling ? 1 : 0,
+    p.bulletTimeActive ? 1 : 0,
+    state.currentAnim, Math.round(state.animTimer * 100) / 100,
+    state.currentWeapon, Math.round(aimAngle * 100) / 100,
+  ]]))
 
   // Flush any queued player bullets
   flushPlayerBullets()
@@ -706,15 +706,13 @@ export function queuePlayerBullet(x: number, y: number, vx: number, vy: number, 
 
 function flushPlayerBullets() {
   if (!socket || !connected || pendingPlayerBullets.length === 0) return
-  // Binary format: 2 + 9 bytes/bullet (was ~50 bytes/bullet JSON)
-  socket.send(new Uint8Array(encodeClientPlayerBullets(pendingPlayerBullets)))
+  socket.send(JSON.stringify(["pb", pendingPlayerBullets.map(b => [b.x, b.y, b.vx, b.vy, b.d])]))
   pendingPlayerBullets.length = 0
 }
 
 export function sendEnemyDamage(enemyIdx: number, damage: number, headshot: boolean) {
   if (!socket || !connected || !serverAuthoritative) return
-  // Binary format: 6 bytes (was ~40 bytes JSON)
-  socket.send(new Uint8Array(encodeEnemyDamageBin(enemyIdx, damage, headshot)))
+  socket.send(JSON.stringify(["ed", [enemyIdx, damage, headshot ? 1 : 0]]))
 }
 
 export function sendCoverDestroyed(x: number, y: number, coverType: string, explosive: boolean) {
