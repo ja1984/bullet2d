@@ -236,7 +236,9 @@ function connectToRoom(room: string) {
   intentionalDisconnect = false
   onStatusChange?.(`Connecting to room ${room}...`)
 
-  socket = new PartySocket({ host: PARTYKIT_HOST, room })
+  const query: Record<string, string> = {}
+  if (localNickname && reconnectAttempts > 0) query.nick = localNickname
+  socket = new PartySocket({ host: PARTYKIT_HOST, room, query })
   socket.binaryType = 'arraybuffer'
 
   socket.addEventListener('open', () => {
@@ -308,6 +310,29 @@ function connectToRoom(room: string) {
           socket.send(JSON.stringify(["nn", localNickname]))
         }
         break
+
+      case 'rc': { // reconnect: [playerIndex, roomCode, playerCount, { hp, x, y, weapon }]
+        localPlayerIndex = d[0]
+        roomCode = d[1]
+        inRoom = true
+        state.players[0].playerIndex = localPlayerIndex
+        nicknames.set(localPlayerIndex, localNickname)
+        // Restore preserved state
+        const restored = d[3]
+        if (restored) {
+          state.player.hp = restored.hp
+          state.player.x = restored.x
+          state.player.y = restored.y
+          if (restored.weapon) state.currentWeapon = restored.weapon
+        }
+        serverAuthoritative = true
+        state.coopEnabled = true
+        onStatusChange?.(`Reconnected to ${roomCode}!`)
+        if (socket && localNickname) {
+          socket.send(JSON.stringify(["nn", localNickname]))
+        }
+        break
+      }
 
       case 'pj': { // player_joined: [playerIndex, nickname]
         const name = d[1] || `P${d[0] + 1}`

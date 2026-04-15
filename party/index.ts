@@ -32,6 +32,10 @@ export default class GameServer implements Party.Server {
   playerNicknames: Map<number, string> = new Map()
   nextIndex = 0
 
+  // Disconnected player state (for graceful reconnection)
+  disconnectedPlayers: Map<string, { record: PlayerRecord; nickname: string; disconnectTime: number }> = new Map()
+  readonly RECONNECT_GRACE_MS = 30_000 // 30 seconds to reconnect
+
   // Game world
   enemies: ServerEnemy[] = []
   platforms: Rect[] = []
@@ -81,51 +85,118 @@ export default class GameServer implements Party.Server {
       return
     }
 
-    const playerIndex = this.nextIndex++
-    conn.setState({ playerIndex })
+    // Check for reconnecting player — match by connection query param
+    const url = new URL(conn.uri, 'http://localhost')
+    const reconnectNickname = url.searchParams.get('nick')
+    const now = Date.now()
 
-    const player: PlayerRecord = {
-      conn, index: playerIndex,
-      x: 100 + playerIndex * 50, y: 500, w: 24, h: 44,
-      vx: 0, vy: 0, hp: 100, facing: 1,
-      onGround: false, crouching: false, diving: false,
-      rolling: false, bulletTimeActive: false,
-      anim: 'idle', animTimer: 0, weapon: 'pistol', aimAngle: 0,
+    // Clean expired disconnected players
+    for (const [nick, dc] of this.disconnectedPlayers) {
+      if (now - dc.disconnectTime > this.RECONNECT_GRACE_MS) this.disconnectedPlayers.delete(nick)
     }
-    this.players.set(playerIndex, player)
 
-    // Send welcome with current player count
-    conn.send(JSON.stringify(["wl", [playerIndex, this.room.id, this.players.size]]))
+    const dcEntry = reconnectNickname ? this.disconnectedPlayers.get(reconnectNickname) : null
 
-    // Tell new player about existing players (with nicknames)
-    for (const [existingPi] of this.players) {
-      if (existingPi !== playerIndex) {
-        conn.send(JSON.stringify(["pj", [existingPi, this.playerNicknames.get(existingPi) || '']]))
+    if (dcEntry) {
+      // ── Reconnection: restore previous slot ──
+      const { record, nickname } = dcEntry
+      this.disconnectedPlayers.delete(reconnectNickname!)
+      const playerIndex = record.index
+
+      record.conn = conn
+      this.players.set(playerIndex, record)
+      this.playerNicknames.set(playerIndex, nickname)
+      conn.setState({ playerIndex })
+
+      // Send reconnect message with preserved state
+      conn.send(JSON.stringify(["rc", [playerIndex, this.room.id, this.players.size, {
+        hp: record.hp, x: Math.round(record.x), y: Math.round(record.y),
+        weapon: record.weapon,
+      }]]))
+
+      // Tell reconnected player about existing players
+      for (const [existingPi] of this.players) {
+        if (existingPi !== playerIndex) {
+          conn.send(JSON.stringify(["pj", [existingPi, this.playerNicknames.get(existingPi) || '']]))
+        }
+      }
+
+      // Notify others this player is back
+      this.broadcast(["pj", [playerIndex, nickname]], conn.id)
+
+      // Send current game state
+      if (this.running) {
+        conn.send(JSON.stringify(this.buildGameState()))
+      }
+    } else {
+      // ── Fresh connection ──
+      const playerIndex = this.nextIndex++
+      conn.setState({ playerIndex })
+
+      const player: PlayerRecord = {
+        conn, index: playerIndex,
+        x: 100 + playerIndex * 50, y: 500, w: 24, h: 44,
+        vx: 0, vy: 0, hp: 100, facing: 1,
+        onGround: false, crouching: false, diving: false,
+        rolling: false, bulletTimeActive: false,
+        anim: 'idle', animTimer: 0, weapon: 'pistol', aimAngle: 0,
+      }
+      this.players.set(playerIndex, player)
+
+      // Send welcome with current player count
+      conn.send(JSON.stringify(["wl", [playerIndex, this.room.id, this.players.size]]))
+
+      // Tell new player about existing players (with nicknames)
+      for (const [existingPi] of this.players) {
+        if (existingPi !== playerIndex) {
+          conn.send(JSON.stringify(["pj", [existingPi, this.playerNicknames.get(existingPi) || '']]))
+        }
+      }
+
+      // Notify existing players about new player
+      this.broadcast(["pj", [playerIndex, '']], conn.id)
+
+      // If game is already running, send current state to late joiner
+      if (this.running) {
+        conn.send(JSON.stringify(this.buildGameState()))
       }
     }
 
-    // Notify existing players about new player
-    this.broadcast(["pj", [playerIndex, '']], conn.id)
-
-    // If game is already running, send current state to late joiner
-    if (this.running) {
-      conn.send(JSON.stringify(this.buildGameState()))
-    }
-
-    // Start game loop when 2+ players
+    // Start or resume game loop when 2+ players
     if (this.players.size >= 2 && !this.running) {
-      this.startGame()
+      if (this.wave > 0) {
+        // Resume — game was paused due to player disconnect
+        this.running = true
+        this.lastTick = Date.now()
+        this.room.storage.setAlarm(Date.now() + TICK_MS)
+      } else {
+        this.startGame()
+      }
     }
   }
 
   onClose(conn: Party.Connection) {
     const pi = (conn.state as any)?.playerIndex ?? -1
+    const player = this.players.get(pi)
+    const nickname = this.playerNicknames.get(pi) || ''
+
+    // Preserve player state for potential reconnection
+    if (player && nickname && this.running) {
+      this.disconnectedPlayers.set(nickname, {
+        record: { ...player }, // snapshot current state
+        nickname,
+        disconnectTime: Date.now(),
+      })
+    }
+
     this.players.delete(pi)
     this.playerNicknames.delete(pi)
     this.broadcast(["pl", pi])
 
     if (this.players.size < 2) {
       this.running = false
+      // Clear disconnected players if game stops
+      this.disconnectedPlayers.clear()
     }
   }
 
